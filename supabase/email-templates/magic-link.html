@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ca">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Entra a plannings</title>
+  </head>
+  <body style="margin:0;padding:0;background:#FBF7F0;font-family:'Inter','Helvetica Neue',Arial,sans-serif;color:#3A2E2A;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F0;padding:48px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#FFFFFF;border:1px solid rgba(58,46,42,0.08);border-radius:20px;overflow:hidden;box-shadow:0 12px 32px -16px rgba(58,46,42,0.18);">
+            <!-- Header band -->
+            <tr>
+              <td style="background:linear-gradient(135deg,#F4A26E 0%,#F8C8A0 50%,#A8C4A2 100%);height:8px;"></td>
+            </tr>
+
+            <!-- Body -->
+            <tr>
+              <td style="padding:40px 40px 32px 40px;">
+                <!-- Logo dot -->
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 20px auto;">
+                  <tr>
+                    <td align="center" style="width:48px;height:48px;background:#F4A26E;border-radius:24px;color:#FFFFFF;font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;line-height:48px;text-align:center;">
+                      p
+                    </td>
+                  </tr>
+                </table>
+
+                <h1 style="margin:0 0 8px 0;font-family:'Fraunces',Georgia,'Times New Roman',serif;font-weight:600;font-size:28px;line-height:1.2;color:#3A2E2A;text-align:center;">
+                  Hola, vosaltres dos
+                </h1>
+                <p style="margin:0 0 28px 0;font-size:15px;line-height:1.55;color:#6B5B57;text-align:center;">
+                  Aquí va l'enllaç per entrar a <strong style="color:#3A2E2A;font-weight:600;">plannings</strong>.<br/>
+                  Sense contrasenyes — només cliqueu i ja sou dins.
+                </p>
+
+                <!-- CTA button -->
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                  <tr>
+                    <td align="center" style="border-radius:14px;background:#3A2E2A;box-shadow:0 2px 0 0 rgba(58,46,42,0.18);">
+                      <a href="{{ .ConfirmationURL }}"
+                         style="display:inline-block;padding:14px 32px;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:15px;font-weight:600;color:#FBF7F0;text-decoration:none;letter-spacing:0.1px;">
+                        Entrar a plannings
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:28px 0 0 0;font-size:13px;line-height:1.55;color:#9B8C87;text-align:center;">
+                  L'enllaç caduca en una hora. Si no funciona, copia i enganxa aquest URL al navegador:<br/>
+                  <a href="{{ .ConfirmationURL }}" style="color:#E27A45;text-decoration:none;word-break:break-all;">{{ .ConfirmationURL }}</a>
+                </p>
+              </td>
+            </tr>
+
+            <!-- Divider -->
+            <tr>
+              <td style="padding:0 40px;">
+                <div style="border-top:1px solid rgba(58,46,42,0.08);"></div>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:24px 40px 32px 40px;text-align:center;">
+                <p style="margin:0 0 6px 0;font-family:'Caveat','Comic Sans MS',cursive;font-size:20px;color:#E27A45;line-height:1;">
+                  amb carinyo
+                </p>
+                <p style="margin:0;font-size:12px;line-height:1.5;color:#9B8C87;">
+                  Si no has demanat aquest enllaç, no facis res. No tornarem a escriure.
+                </p>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Bottom note -->
+          <p style="margin:20px 0 0 0;font-size:11px;line-height:1.5;color:#B5A8A3;text-align:center;">
+            plannings · el nostre diari de plans
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

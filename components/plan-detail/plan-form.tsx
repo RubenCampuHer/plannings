@@ -1,0 +1,272 @@
+"use client";
+
+import Link from "next/link";
+import { useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { DayPlanTemplates } from "@/components/plan-detail/day-plan-templates";
+import type { DayPlanParts } from "@/components/plan-detail/day-plan-templates";
+import { createPlan, updatePlan } from "@/lib/plan-actions";
+import type { Plan, PlanStatus, PlanType } from "@/lib/types";
+
+const TYPE_OPTIONS: { value: PlanType; label: string }[] = [
+  { value: "deep", label: "viatge llarg" },
+  { value: "weekend", label: "escapada" },
+  { value: "day", label: "dia" },
+];
+
+const STATUS_OPTIONS: { value: PlanStatus; label: string }[] = [
+  { value: "planning", label: "planificant" },
+  { value: "active", label: "en curs" },
+  { value: "completed", label: "viscut" },
+  { value: "archived", label: "arxivat" },
+];
+
+const COVER_PRESETS = [
+  "linear-gradient(135deg, #F4A26E 0%, #E27A45 45%, #6B97A8 100%)",
+  "linear-gradient(135deg, #8FB4C2 0%, #B8CFD8 45%, #F8C8A0 100%)",
+  "linear-gradient(135deg, #F4A26E 0%, #F8C8A0 60%, #C9DCC4 100%)",
+  "linear-gradient(160deg, #B8CFD8 0%, #6B97A8 50%, #3A2E2A 100%)",
+  "linear-gradient(135deg, #A8C4A2 0%, #F8C8A0 50%, #F4A26E 100%)",
+  "linear-gradient(135deg, #F8C8A0 0%, #F4A26E 40%, #C9DCC4 100%)",
+];
+
+const FIELD =
+  "w-full h-11 px-3 rounded-md border border-ink-faint/60 bg-cream-soft text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
+const TEXTAREA =
+  "w-full px-3 py-2 rounded-md border border-ink-faint/60 bg-cream-soft text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
+const LABEL = "text-sm font-medium text-ink-soft";
+
+export function PlanForm({ plan }: { plan?: Plan }) {
+  const isEdit = Boolean(plan);
+  const [cover, setCover] = useState<string>(plan?.cover ?? COVER_PRESETS[0]);
+  const [type, setType] = useState<PlanType>(plan?.type ?? "weekend");
+  const [error, setError] = useState<string | null>(null);
+
+  const titleRef = useRef<HTMLInputElement>(null);
+  const summaryRef = useRef<HTMLTextAreaElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  function applyDayTemplate(parts: DayPlanParts) {
+    if (titleRef.current && titleRef.current.value.trim() === "") {
+      titleRef.current.value = parts.title;
+    }
+    if (summaryRef.current && summaryRef.current.value.trim() === "") {
+      summaryRef.current.value = parts.summary;
+    }
+    if (bodyRef.current) {
+      bodyRef.current.value = parts.body;
+    }
+  }
+
+  async function action(formData: FormData) {
+    setError(null);
+    try {
+      if (isEdit && plan) {
+        await updatePlan(plan.id, formData);
+      } else {
+        await createPlan(formData);
+      }
+    } catch (e) {
+      // Els redirects de Next.js es propaguen com a errors especials —
+      // si NEXT_REDIRECT, no és un error real, deixem que el framework el gestioni.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("NEXT_REDIRECT")) throw e;
+      setError(msg);
+    }
+  }
+
+  return (
+    <form action={action} className="space-y-8 max-w-3xl">
+      {error && (
+        <div className="rounded-md border border-peach-deep/40 bg-peach-soft/40 px-4 py-3 text-sm text-ink">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <label htmlFor="title" className={LABEL}>Títol</label>
+        <input
+          ref={titleRef}
+          id="title"
+          name="title"
+          type="text"
+          required
+          defaultValue={plan?.title ?? ""}
+          placeholder="Sis mesos per Àsia, escapada a Roma..."
+          className={FIELD}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label htmlFor="type" className={LABEL}>Tipus</label>
+          <select
+            id="type"
+            name="type"
+            value={type}
+            onChange={(e) => setType(e.target.value as PlanType)}
+            className={FIELD}
+          >
+            {TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="status" className={LABEL}>Estat</label>
+          <select id="status" name="status" defaultValue={plan?.status ?? "planning"} className={FIELD}>
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="destination" className={LABEL}>Destinació</label>
+        <input
+          id="destination"
+          name="destination"
+          type="text"
+          defaultValue={plan?.destination ?? ""}
+          placeholder="Barcelona, Sud-est asiàtic..."
+          className={FIELD}
+        />
+      </div>
+
+      {type === "day" ? (
+        <div className="space-y-2">
+          <label htmlFor="startDate" className={LABEL}>Data</label>
+          <input
+            id="startDate"
+            name="startDate"
+            type="date"
+            defaultValue={plan?.startDate ?? ""}
+            className={FIELD}
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label htmlFor="startDate" className={LABEL}>Data inici</label>
+            <input
+              id="startDate"
+              name="startDate"
+              type="date"
+              defaultValue={plan?.startDate ?? ""}
+              className={FIELD}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="endDate" className={LABEL}>Data fi</label>
+            <input
+              id="endDate"
+              name="endDate"
+              type="date"
+              defaultValue={plan?.endDate ?? ""}
+              className={FIELD}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-4">
+        <div className="space-y-2">
+          <label htmlFor="budgetTotal" className={LABEL}>Pressupost</label>
+          <input
+            id="budgetTotal"
+            name="budgetTotal"
+            type="number"
+            min={0}
+            step={1}
+            defaultValue={plan?.budgetTotal ?? ""}
+            placeholder="0"
+            className={FIELD}
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="budgetCurrency" className={LABEL}>Moneda</label>
+          <select
+            id="budgetCurrency"
+            name="budgetCurrency"
+            defaultValue={plan?.budgetCurrency ?? "EUR"}
+            className={FIELD}
+          >
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+            <option value="GBP">GBP</option>
+            <option value="JPY">JPY</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="summary" className={LABEL}>Resum (1-2 frases per la targeta)</label>
+        <textarea
+          ref={summaryRef}
+          id="summary"
+          name="summary"
+          required
+          rows={3}
+          defaultValue={plan?.summary ?? ""}
+          placeholder="Auroras boreals, banys termals i una furgo amb llit per perdre'ns una setmana..."
+          className={TEXTAREA}
+        />
+      </div>
+
+      {type === "day" && <DayPlanTemplates onApply={applyDayTemplate} />}
+
+      <div className="space-y-2">
+        <label htmlFor="body" className={LABEL}>Cos del plan (Markdown)</label>
+        <textarea
+          ref={bodyRef}
+          id="body"
+          name="body"
+          required
+          rows={14}
+          defaultValue={plan?.body ?? ""}
+          placeholder={"## La idea\n\nQuè volem fer i per què...\n\n## Pendents\n\n- Cosa 1\n- Cosa 2"}
+          className={`${TEXTAREA} font-mono text-sm`}
+        />
+      </div>
+
+      <div className="space-y-3">
+        <label className={LABEL}>Portada</label>
+        <div className="rounded-md h-32 border border-ink-faint/40" style={{ background: cover }} />
+        <div className="flex flex-wrap gap-2">
+          {COVER_PRESETS.map((g, i) => (
+            <button
+              type="button"
+              key={i}
+              onClick={() => setCover(g)}
+              className={`h-8 w-12 rounded-md border-2 transition ${
+                cover === g ? "border-ink ring-2 ring-peach/40" : "border-ink-faint/40"
+              }`}
+              style={{ background: g }}
+              aria-label={`Degradat ${i + 1}`}
+            />
+          ))}
+        </div>
+        <input
+          name="cover"
+          type="text"
+          value={cover}
+          onChange={(e) => setCover(e.target.value)}
+          className={`${FIELD} font-mono text-xs`}
+        />
+      </div>
+
+      <div className="flex items-center gap-3 pt-4 border-t border-ink-faint/30">
+        <Button type="submit" variant="primary">
+          {isEdit ? "Desar canvis" : "Crear plan"}
+        </Button>
+        <Link
+          href={isEdit && plan ? `/plans/${plan.id}` : "/"}
+          className="text-sm text-ink-soft hover:text-ink"
+        >
+          Cancel·lar
+        </Link>
+      </div>
+    </form>
+  );
+}
