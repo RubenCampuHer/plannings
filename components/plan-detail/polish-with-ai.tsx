@@ -14,13 +14,12 @@ import { Button } from "@/components/ui/button";
 import {
   addAiChecklistItems,
   applyAiPlaceSuggestions,
-  applyPolishedBody,
   polishWithAi,
   type PolishSuggestions,
 } from "@/lib/ai-actions";
 
 type ApplyResult = {
-  bodyApplied: boolean;
+  bodyInjected: boolean;
   placesAdded: number;
   placesFailed: string[];
   checklistAdded: number;
@@ -84,10 +83,20 @@ export function PolishWithAi({ planId }: { planId: string }) {
         (i) => suggestions.suggestedChecklist[i].text,
       );
 
-      const [, placesResult] = await Promise.all([
-        acceptBody
-          ? applyPolishedBody(planId, suggestions.enrichedBody)
-          : Promise.resolve(),
+      // El cos no es persisteix aquí — només s'injecta al textarea del form.
+      // L'usuari ha de clicar "Desar canvis" del formulari per guardar-lo.
+      let bodyInjected = false;
+      if (acceptBody) {
+        const ta = document.getElementById("body") as HTMLTextAreaElement | null;
+        if (ta) {
+          ta.value = suggestions.enrichedBody;
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+          ta.scrollIntoView({ behavior: "smooth", block: "center" });
+          bodyInjected = true;
+        }
+      }
+
+      const [placesResult] = await Promise.all([
         placesToAdd.length > 0
           ? applyAiPlaceSuggestions(planId, placesToAdd)
           : Promise.resolve({ added: 0, failed: [] as string[] }),
@@ -96,13 +105,10 @@ export function PolishWithAi({ planId }: { planId: string }) {
           : Promise.resolve(),
       ]);
 
-      const places = (placesResult ?? { added: 0, failed: [] }) as {
-        added: number;
-        failed: string[];
-      };
+      const places = placesResult as { added: number; failed: string[] };
 
       setApplied({
-        bodyApplied: acceptBody,
+        bodyInjected,
         placesAdded: places.added,
         placesFailed: places.failed,
         checklistAdded: checklistTexts.length,
@@ -124,7 +130,12 @@ export function PolishWithAi({ planId }: { planId: string }) {
           <p className="font-medium text-ink">Aplicat</p>
         </div>
         <ul className="text-sm text-ink-soft space-y-1 ml-7 list-disc list-outside">
-          {applied.bodyApplied && <li>Cos del plan actualitzat</li>}
+          {applied.bodyInjected && (
+            <li>
+              Cos del plan injectat al formulari —{" "}
+              <strong className="text-ink">clica "Desar canvis"</strong> per guardar-lo.
+            </li>
+          )}
           {applied.placesAdded > 0 && (
             <li>
               {applied.placesAdded} {applied.placesAdded === 1 ? "lloc afegit" : "llocs afegits"} al mapa
@@ -161,7 +172,7 @@ export function PolishWithAi({ planId }: { planId: string }) {
               Polish amb IA
             </h2>
             <p className="text-sm text-ink-soft mb-4">
-              Demana a Claude que enriqueixi el cos, suggereixi llocs per al mapa i
+              Demana a la IA que enriqueixi el cos, suggereixi llocs per al mapa i
               items per a la checklist. Tu tries què acceptes.
             </p>
             <Button onClick={fetchSuggestions} disabled={loading} variant="primary">
@@ -314,8 +325,9 @@ export function PolishWithAi({ planId }: { planId: string }) {
       </div>
 
       <p className="text-xs text-ink-soft pt-1">
-        Nota: si reemplaces el cos, no podràs desfer-ho fàcilment (l'antic es perd).
-        Els llocs i items de checklist sempre es poden esborrar després.
+        Nota: el cos s'injecta al formulari de dalt — pots revisar-lo i editar-lo
+        abans de clicar "Desar canvis". Els llocs i items de checklist sí que
+        s'apliquen al moment (es poden esborrar després).
       </p>
     </div>
   );

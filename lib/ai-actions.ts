@@ -16,6 +16,38 @@ function getClient(): GoogleGenAI {
   return new GoogleGenAI({ apiKey });
 }
 
+// Tradueix els errors de l'API de Google a missatges curts en català perquè
+// la UI no mostri el JSON brut.
+function translateGeminiError(e: unknown): Error {
+  const raw = e instanceof Error ? e.message : String(e);
+
+  if (/RESOURCE_EXHAUSTED|429|quota|rate.?limit/i.test(raw)) {
+    // Cas concret: la clau no té quota assignada (limit: 0) — habitualment
+    // significa que el projecte de Google Cloud no té l'API habilitada o no
+    // té facturació activa.
+    if (/limit:\s*0/i.test(raw)) {
+      return new Error(
+        "La clau de Gemini no té quota (limit: 0). Comprova a aistudio.google.com/apikey que la clau ve d'un projecte amb l'API Generative Language habilitada, o regenera-la des d'un projecte nou.",
+      );
+    }
+    return new Error(
+      "Has superat la quota de Gemini per ara. Prova-ho d'aquí uns segons.",
+    );
+  }
+
+  if (/API key not valid|INVALID_ARGUMENT.*api[_ ]?key|permission/i.test(raw)) {
+    return new Error(
+      "La clau de Gemini no és vàlida. Revisa GOOGLE_AI_API_KEY a .env.local.",
+    );
+  }
+
+  if (/network|fetch failed|ECONNREFUSED|ETIMEDOUT/i.test(raw)) {
+    return new Error("No s'ha pogut contactar amb Gemini. Comprova la connexió.");
+  }
+
+  return new Error(`Error de la IA: ${raw.slice(0, 200)}`);
+}
+
 export type SuggestedPlace = {
   name: string;
   searchQuery: string;
@@ -38,8 +70,15 @@ const RESPONSE_SCHEMA = {
   properties: {
     enriched_body: {
       type: Type.STRING,
-      description:
-        "Cos del plan millorat en Markdown català. Manté el to càlid i la veu de l'usuari. Estructura amb seccions H2 (## ).",
+      description: `Cos del plan en Markdown català, formatat per llegir-se com a diari personal:
+- Seccions amb ## i ### per sub-seccions quan calgui.
+- **Negretes** a noms propis importants (ciutats, monuments, restaurants concrets) i conceptes clau.
+- *Cursives* per a matisos, frases citades, èmfasi suau.
+- Llistes amb - (bullets) o 1. (numerades).
+- > blockquotes per a frases memorables, cites o consells importants.
+- NO usis taules. NO posis tot en negreta — ha de respirar.
+- To càlid en primera persona del plural ("anem", "fem"), com si l'usuari prengués notes per a si mateix.
+- Manté qualsevol referència d'imatge tipus ![](pp:...) EXACTAMENT igual; no les rescriguis ni les eliminis.`,
     },
     suggested_places: {
       type: Type.ARRAY,
@@ -139,21 +178,26 @@ Items de checklist ja existents (NO suggerir aquests):
 ${checklistList}
 
 Tasques:
-1. Enriqueix el cos amb estructura Markdown (## per seccions), afegeix detalls realistes i petits consells. Manté la veu de l'usuari.
-2. Suggereix 3-8 llocs concrets per visitar/fer relacionats amb el plan. Cada lloc ha de tenir un search_query precís.
+1. Enriqueix el cos amb formato ric (## i ###, **negretes** a noms propis, *cursives* a matisos, > blockquotes ocasionals, llistes amb -). Afegeix detalls realistes i petits consells. Manté la veu de l'usuari. Preserva qualsevol \`![](pp:...)\` exactament igual.
+2. Suggereix 8-15 llocs concrets per visitar/fer relacionats amb el plan. Cada lloc ha de tenir un search_query precís (inclou ciutat i país).
 3. Suggereix 3-6 items de checklist que l'usuari potser ha oblidat (reserves, equipatge, vacunes, entrades, etc).`;
 
   const client = getClient();
-  const response = await client.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: [{ role: "user", parts: [{ text: userMessage }] }],
-    config: {
-      systemInstruction,
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-      temperature: 0.6,
-    },
-  });
+  let response;
+  try {
+    response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: userMessage }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        temperature: 0.6,
+      },
+    });
+  } catch (e) {
+    throw translateGeminiError(e);
+  }
 
   const text = response.text;
   if (!text) {
@@ -180,17 +224,6 @@ Tasques:
     })),
     suggestedChecklist: (parsed.suggested_checklist ?? []).map((c) => ({ text: c.text })),
   };
-}
-
-export async function applyPolishedBody(planId: string, body: string): Promise<void> {
-  const supabase = await createSupabaseServer();
-  const { error } = await supabase
-    .from("plans")
-    .update({ body, updated_at: new Date().toISOString() })
-    .eq("id", planId);
-  if (error) throw new Error(`Aplicar cos: ${error.message}`);
-  revalidatePath(`/plans/${planId}`);
-  revalidatePath(`/plans/${planId}/edit`);
 }
 
 export async function addAiChecklistItems(

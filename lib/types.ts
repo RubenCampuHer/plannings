@@ -42,6 +42,17 @@ export type PlanPhoto = {
   /** CSS gradient string used as placeholder when no image is uploaded yet */
   gradient?: string;
   takenAt?: string;
+  /** Path dins del bucket `plan-photos`, si hi ha imatge real. */
+  storagePath?: string;
+  mimeType?: string;
+  /** Signed URL recent, generada al servidor a render time (1h TTL). */
+  imageUrl?: string;
+};
+
+/** Resum d'un plan pare, usat per al breadcrumb dels fills sense carregar tot. */
+export type PlanRef = {
+  id: string;
+  title: string;
 };
 
 export type Plan = {
@@ -49,8 +60,12 @@ export type Plan = {
   title: string;
   type: PlanType;
   status: PlanStatus;
-  /** CSS gradient string used as the cover background */
+  /** CSS gradient string used as the cover background — fallback quan no hi ha imatge. */
   cover: string;
+  /** Path al bucket `plan-photos` de la imatge de portada, si l'usuari n'ha pujat una. */
+  coverImagePath?: string;
+  /** Signed URL recent de la imatge de portada (1h TTL). */
+  coverImageUrl?: string;
   destination?: string;
   startDate?: string;
   endDate?: string;
@@ -58,6 +73,10 @@ export type Plan = {
   budgetCurrency?: string;
   summary: string;
   body: string;
+  /** Si està definit, aquest plan és un sub-plan d'un altre. */
+  parentPlanId?: string;
+  /** Resum del pare per al breadcrumb. Només es carrega al getPlanById. */
+  parent?: PlanRef;
   places: Place[];
   checklist: ChecklistItem[];
   expenses: Expense[];

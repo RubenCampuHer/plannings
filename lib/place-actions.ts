@@ -109,3 +109,27 @@ export async function deletePlace(planId: string, placeId: string): Promise<void
   revalidatePath(`/plans/${planId}`);
   revalidatePath(`/plans/${planId}/edit`);
 }
+
+/**
+ * Actualitza l'ordre de tots els llocs del plan segons l'array rebut.
+ * order_index = índex de cada id a `orderedIds`. Així el client pot reordenar
+ * locally amb optimistic UI i sincronitzar amb una sola crida.
+ */
+export async function reorderPlaces(
+  planId: string,
+  orderedIds: string[],
+): Promise<void> {
+  const supabase = await createSupabaseServer();
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await supabase
+      .from("places")
+      .update({ order_index: i })
+      .eq("id", orderedIds[i])
+      .eq("plan_id", planId);
+    if (error) {
+      throw new Error(`Reordenar lloc ${orderedIds[i]}: ${error.message}`);
+    }
+  }
+  revalidatePath(`/plans/${planId}`);
+  revalidatePath(`/plans/${planId}/edit`);
+}

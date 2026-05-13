@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { MapPin, Plus, Search, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowDown, ArrowUp, MapPin, Plus, Search, Trash2 } from "lucide-react";
 import { MapSection } from "@/components/plan-detail/map-section";
 import {
   addPlace,
   deletePlace,
   geocodeSearch,
+  reorderPlaces,
   type GeocodeResult,
 } from "@/lib/place-actions";
 import type { Place } from "@/lib/types";
@@ -31,6 +31,7 @@ export function PlacesEditor({
 
   // Sync amb props quan el server re-render després d'un revalidatePath.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPlaces(initialPlaces);
   }, [initialPlaces]);
 
@@ -38,6 +39,7 @@ export function PlacesEditor({
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
       setSearching(false);
       return;
@@ -102,13 +104,35 @@ export function PlacesEditor({
     });
   }
 
+  function move(index: number, direction: "up" | "down") {
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= places.length) return;
+    setError(null);
+    const before = places;
+    const next = [...places];
+    [next[index], next[target]] = [next[target], next[index]];
+    setPlaces(next);
+    startTransition(async () => {
+      try {
+        await reorderPlaces(
+          planId,
+          next.map((p) => p.id),
+        );
+      } catch (e) {
+        setPlaces(before);
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+      }
+    });
+  }
+
   return (
     <div className="space-y-5">
       <div>
         <h2 className="font-serif text-xl font-semibold text-ink mb-1">Llocs al mapa</h2>
         <p className="text-sm text-ink-soft">
-          Busca un lloc per nom o adreça (ex. "Cinema Verdi Barcelona", "Bangkok").
-          S'afegeix al mapa al moment.
+          Busca un lloc per nom o adreça (ex. &laquo;Cinema Verdi Barcelona&raquo;, &laquo;Bangkok&raquo;).
+          S&apos;afegeix al mapa al moment.
         </p>
       </div>
 
@@ -162,31 +186,56 @@ export function PlacesEditor({
             {places.length} {places.length === 1 ? "lloc" : "llocs"}
           </p>
           <ul className="space-y-1.5">
-            {places.map((p, i) => (
-              <li
-                key={p.id}
-                className="flex items-center gap-3 px-3 py-2 rounded-md border border-ink-faint/30 bg-cream-soft/60 group"
-              >
-                <span className="grid place-items-center h-6 w-6 rounded-full bg-peach text-white text-xs font-medium shrink-0">
-                  {i + 1}
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-medium text-ink truncate">{p.name}</span>
-                  {p.country && (
-                    <span className="block text-xs text-ink-soft">{p.country}</span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(p.id)}
-                  disabled={p.id.startsWith("temp-")}
-                  className="opacity-40 group-hover:opacity-100 hover:text-peach-deep transition disabled:cursor-wait"
-                  aria-label={`Esborrar ${p.name}`}
+            {places.map((p, i) => {
+              const isTemp = p.id.startsWith("temp-");
+              const isFirst = i === 0;
+              const isLast = i === places.length - 1;
+              return (
+                <li
+                  key={p.id}
+                  className="flex items-center gap-3 px-3 py-2 rounded-md border border-ink-faint/30 bg-cream-soft/60 group"
                 >
-                  <Trash2 className="h-4 w-4" strokeWidth={2} />
-                </button>
-              </li>
-            ))}
+                  <span className="grid place-items-center h-6 w-6 rounded-full bg-peach text-white text-xs font-medium shrink-0">
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-ink truncate">{p.name}</span>
+                    {p.country && (
+                      <span className="block text-xs text-ink-soft">{p.country}</span>
+                    )}
+                  </span>
+                  <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 transition">
+                    <button
+                      type="button"
+                      onClick={() => move(i, "up")}
+                      disabled={isTemp || isFirst}
+                      className="p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
+                      aria-label={`Pujar ${p.name}`}
+                    >
+                      <ArrowUp className="h-4 w-4" strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => move(i, "down")}
+                      disabled={isTemp || isLast}
+                      className="p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
+                      aria-label={`Baixar ${p.name}`}
+                    >
+                      <ArrowDown className="h-4 w-4" strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(p.id)}
+                      disabled={isTemp}
+                      className="p-1 hover:text-peach-deep transition disabled:cursor-wait"
+                      aria-label={`Esborrar ${p.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" strokeWidth={2} />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -199,7 +248,7 @@ export function PlacesEditor({
           <div>
             <MapPin className="h-8 w-8 mx-auto text-ink-faint mb-2" strokeWidth={1.5} />
             <p className="text-sm text-ink-soft">
-              Encara no hi ha cap lloc. Busca'n un a sobre.
+              Encara no hi ha cap lloc. Busca&apos;n un a sobre.
             </p>
           </div>
         </div>

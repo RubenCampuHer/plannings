@@ -1,33 +1,53 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createSupabaseServer } from "./supabase-server";
 
-export async function requestMagicLink(formData: FormData): Promise<void> {
+function parseCredentials(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  if (!email) {
-    redirect("/login?error=email_required");
+  const password = String(formData.get("password") ?? "");
+  return { email, password };
+}
+
+export async function signInWithPassword(formData: FormData): Promise<void> {
+  const { email, password } = parseCredentials(formData);
+  if (!email || !password) {
+    redirect("/login?mode=signin&error=missing_fields");
   }
 
   const supabase = await createSupabaseServer();
-  const h = await headers();
-  const origin = h.get("origin") ?? h.get("host");
-  const protocol = h.get("x-forwarded-proto") ?? "http";
-  const baseUrl = origin?.startsWith("http") ? origin : `${protocol}://${origin}`;
-
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: `${baseUrl}/auth/callback`,
-    },
-  });
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    redirect(`/login?mode=signin&error=${encodeURIComponent(error.message)}`);
   }
 
-  redirect(`/login?sent=${encodeURIComponent(email)}`);
+  redirect("/");
+}
+
+export async function signUpWithPassword(formData: FormData): Promise<void> {
+  const { email, password } = parseCredentials(formData);
+  if (!email || !password) {
+    redirect("/login?mode=signup&error=missing_fields");
+  }
+  if (password.length < 6) {
+    redirect("/login?mode=signup&error=short_password");
+  }
+
+  const supabase = await createSupabaseServer();
+  const { data, error } = await supabase.auth.signUp({ email, password });
+
+  if (error) {
+    // El trigger de whitelist a la BD també arriba aquí amb el seu missatge.
+    redirect(`/login?mode=signup&error=${encodeURIComponent(error.message)}`);
+  }
+
+  // Si Supabase té "Confirm email" activat, no hi ha sessió fins que cliquin el correu.
+  if (!data.session) {
+    redirect(`/login?mode=signin&confirm=${encodeURIComponent(email)}`);
+  }
+
+  redirect("/");
 }
 
 export async function signOut(): Promise<void> {

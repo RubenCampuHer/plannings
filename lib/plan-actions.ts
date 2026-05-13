@@ -20,6 +20,7 @@ function readPlanForm(fd: FormData) {
   const budgetCurrency = String(fd.get("budgetCurrency") ?? "").trim();
   const summary = String(fd.get("summary") ?? "").trim();
   const body = String(fd.get("body") ?? "").trim();
+  const parentPlanIdRaw = String(fd.get("parentPlanId") ?? "").trim();
 
   if (!title) throw new Error("El títol és obligatori.");
   if (!summary) throw new Error("El resum és obligatori.");
@@ -53,6 +54,7 @@ function readPlanForm(fd: FormData) {
     budget_currency: budgetTotal != null ? budgetCurrency || "EUR" : null,
     summary,
     body,
+    parent_plan_id: parentPlanIdRaw || null,
   };
 }
 
@@ -99,13 +101,25 @@ export async function archivePlan(id: string): Promise<void> {
 
 export async function deletePlan(id: string): Promise<void> {
   // Les taules relacionades cauen per ON DELETE CASCADE.
+  // Els sub-plans (fills) queden orfes per ON DELETE SET NULL al parent_plan_id.
   const supabase = await createSupabaseServer();
+
+  // Recuperem el pare per refrescar-li la card de sub-plans, i decidir on
+  // redirigir si aquest plan era un fill.
+  const { data: existing } = await supabase
+    .from("plans")
+    .select("parent_plan_id")
+    .eq("id", id)
+    .maybeSingle();
+  const parentId = (existing?.parent_plan_id as string | null | undefined) ?? null;
+
   const { error } = await supabase.from("plans").delete().eq("id", id);
   if (error) throw new Error(`Esborrar plan ${id}: ${error.message}`);
 
   revalidatePath("/");
   revalidatePath("/archive");
-  redirect("/");
+  if (parentId) revalidatePath(`/plans/${parentId}`);
+  redirect(parentId ? `/plans/${parentId}` : "/");
 }
 
 export async function unarchivePlan(id: string): Promise<void> {
@@ -122,6 +136,43 @@ export async function unarchivePlan(id: string): Promise<void> {
   redirect(`/plans/${id}`);
 }
 
+/**
+ * Updates ràpids d'un sol camp des de l'edició inline al detall.
+ * Eviten el cicle complet de /edit + redirect.
+ */
+export async function updatePlanSummary(
+  planId: string,
+  summary: string,
+): Promise<void> {
+  const trimmed = summary.trim();
+  if (!trimmed) throw new Error("El resum no pot estar buit.");
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase
+    .from("plans")
+    .update({ summary: trimmed, updated_at: new Date().toISOString() })
+    .eq("id", planId);
+  if (error) throw new Error(`Actualitzar resum: ${error.message}`);
+  revalidatePath("/");
+  revalidatePath(`/plans/${planId}`);
+  revalidatePath(`/plans/${planId}/edit`);
+}
+
+export async function updatePlanBody(
+  planId: string,
+  body: string,
+): Promise<void> {
+  const trimmed = body.trim();
+  if (!trimmed) throw new Error("El cos del plan no pot estar buit.");
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase
+    .from("plans")
+    .update({ body: trimmed, updated_at: new Date().toISOString() })
+    .eq("id", planId);
+  if (error) throw new Error(`Actualitzar cos: ${error.message}`);
+  revalidatePath(`/plans/${planId}`);
+  revalidatePath(`/plans/${planId}/edit`);
+}
+
 export async function updatePlan(id: string, formData: FormData): Promise<void> {
   const fields = readPlanForm(formData);
   const supabase = await createSupabaseServer();
@@ -135,6 +186,7 @@ export async function updatePlan(id: string, formData: FormData): Promise<void> 
   revalidatePath("/");
   revalidatePath("/archive");
   revalidatePath(`/plans/${id}`);
+  if (fields.parent_plan_id) revalidatePath(`/plans/${fields.parent_plan_id}`);
   redirect(target);
 }
 
@@ -155,5 +207,6 @@ export async function createPlan(formData: FormData): Promise<void> {
 
   revalidatePath("/");
   revalidatePath("/archive");
+  if (fields.parent_plan_id) revalidatePath(`/plans/${fields.parent_plan_id}`);
   redirect(`/plans/${id}`);
 }

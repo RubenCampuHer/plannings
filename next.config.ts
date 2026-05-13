@@ -7,6 +7,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  experimental: {
+    serverActions: {
+      // Documents Word del viatge llarg poden arribar a uns MB amb imatges embedded.
+      // Per defecte el límit és 1MB, massa just.
+      bodySizeLimit: "10mb",
+    },
+  },
 };
 
 export default nextConfig;

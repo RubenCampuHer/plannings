@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-type Variant = "peach" | "sage" | "dusty" | "cream" | "ink";
+type Variant = "peach" | "sage" | "dusty" | "cream" | "ink" | "glass";
 
 const VARIANTS: Record<Variant, string> = {
   peach: "bg-peach/20 text-peach-deep border-peach/30",
@@ -8,6 +8,8 @@ const VARIANTS: Record<Variant, string> = {
   dusty: "bg-dusty/25 text-dusty-deep border-dusty/40",
   cream: "bg-cream/95 text-ink border-ink-faint/40",
   ink: "bg-ink/90 text-cream border-ink/90",
+  // Per col·locar sobre fotos: dark frosted glass amb text blanc.
+  glass: "bg-black/40 text-white border-white/25 backdrop-blur-sm",
 };
 
 export function Badge({

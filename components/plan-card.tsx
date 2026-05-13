@@ -9,18 +9,9 @@ import {
 } from "@/lib/format";
 import type { Plan } from "@/lib/types";
 
-const TYPE_TONE = {
-  deep: "peach",
-  weekend: "dusty",
-  day: "sage",
-} as const;
-
-const STATUS_TONE = {
-  planning: "cream",
-  active: "peach",
-  completed: "sage",
-  archived: "cream",
-} as const;
+// Tots els badges sobre covers (imatge o gradient) van amb `glass`: els tonals
+// es fonien amb gradients del mateix color (un chip sage sobre un gradient
+// peach→sage no es veia). Glass dóna contrast garantit sobre qualsevol fons.
 
 export function PlanCard({ plan }: { plan: Plan }) {
   const dateRange = formatDateRange(plan.startDate, plan.endDate);
@@ -33,18 +24,22 @@ export function PlanCard({ plan }: { plan: Plan }) {
     >
       {/* Cover */}
       <div
-        className="relative h-44 overflow-hidden"
-        style={{ background: plan.cover }}
+        className="relative h-44 overflow-hidden bg-cover bg-center"
+        style={{
+          background: plan.coverImageUrl
+            ? `url("${plan.coverImageUrl}") center / cover no-repeat`
+            : plan.cover,
+        }}
       >
-        <div className="absolute inset-0 bg-gradient-to-t from-black/15 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
         <div className="absolute top-3 left-3 flex gap-1.5">
-          <Badge variant={TYPE_TONE[plan.type]}>{TYPE_LABELS_CA[plan.type]}</Badge>
+          <Badge variant="glass">{TYPE_LABELS_CA[plan.type]}</Badge>
           {plan.status !== "planning" && (
-            <Badge variant={STATUS_TONE[plan.status]}>{STATUS_LABELS_CA[plan.status]}</Badge>
+            <Badge variant="glass">{STATUS_LABELS_CA[plan.status]}</Badge>
           )}
         </div>
         {dateRange && (
-          <div className="absolute bottom-3 right-3 font-hand text-xl text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)] -rotate-2">
+          <div className="absolute bottom-3 right-3 font-hand text-xl text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)] -rotate-2">
             {dateRange}
           </div>
         )}

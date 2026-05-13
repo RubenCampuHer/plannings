@@ -10,9 +10,16 @@ import { ExpenseTable } from "@/components/plan-detail/expense-table";
 import { PhotoGallery } from "@/components/plan-detail/photo-gallery";
 import { DocumentList } from "@/components/plan-detail/document-list";
 import { PlaceList } from "@/components/plan-detail/place-list";
+import { PlanBreadcrumb } from "@/components/plan-detail/plan-breadcrumb";
+import { EditableBody } from "@/components/plan-detail/editable-body";
+import { EditableSummary } from "@/components/plan-detail/editable-summary";
+import { PlanRooms, type Room } from "@/components/plan-detail/plan-rooms";
+import { PlanToc } from "@/components/plan-detail/plan-toc";
+import { SubPlansCard } from "@/components/plan-detail/sub-plans-card";
+import { SubPlansTimeline } from "@/components/plan-detail/sub-plans-timeline";
 import { formatDateRange, formatMoney } from "@/lib/format";
-import { getPlanById } from "@/lib/plans";
-import type { Plan } from "@/lib/types";
+import { getChildPlanRefs, getPlanById } from "@/lib/plans";
+import { extractH2Headings } from "@/lib/toc";
 
 // Sense generateStaticParams: amb auth la pàgina és per-request,
 // pre-generar al build no aporta i a més no hi ha cookies disponibles llavors.
@@ -33,24 +40,52 @@ export async function generateMetadata({
   };
 }
 
+function parseRoom(v: string | string[] | undefined): Room {
+  const value = Array.isArray(v) ? v[0] : v;
+  if (value === "mapa" || value === "album") return value;
+  return "resum";
+}
+
 export default async function PlanDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ v?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const plan = await getPlanById(id);
   if (!plan) notFound();
 
   const dateRange = formatDateRange(plan.startDate, plan.endDate);
   const budget = formatMoney(plan.budgetTotal, plan.budgetCurrency);
-  const hasSidebar =
-    plan.checklist.length > 0 ||
-    plan.expenses.length > 0 ||
-    plan.documents.length > 0;
+  const tocHeadings = extractH2Headings(plan.body);
+  const showToc = tocHeadings.length >= 3;
+  const children = await getChildPlanRefs(plan.id);
+  // Card de sub-plans visible si ja en té, o si és un viatge llarg (deep) on
+  // sol tenir sentit afegir-ne.
+  const showSubPlans = children.length > 0 || plan.type === "deep";
+
+  // Estances disponibles:
+  // - Resum sempre (la pestanya principal amb cos + sidebar).
+  // - Mapa només si hi ha llocs (l'editor de llocs viu a /edit, no es pot afegir des d'aquí).
+  // - Àlbum: per a viatges/escapades sempre (perquè es pot pujar des d'aquí encara que estigui buit);
+  //   per a plans `day` només quan ja hi ha fotos.
+  const hasMapa = plan.places.length > 0;
+  const hasAlbum = plan.photos.length > 0 || plan.type !== "day";
+  const available: Room[] = [
+    "resum",
+    ...(hasMapa ? (["mapa"] as const) : []),
+    ...(hasAlbum ? (["album"] as const) : []),
+  ];
+  const requested = parseRoom(sp.v);
+  const room: Room = available.includes(requested) ? requested : "resum";
+  const showRooms = available.length > 1;
 
   return (
     <article>
+      {plan.parent && <PlanBreadcrumb parent={plan.parent} />}
       <CoverHero plan={plan} dateRange={dateRange} />
 
       {/* Quick info strip */}
@@ -74,7 +109,6 @@ export default async function PlanDetailPage({
               <span className="text-ink">{budget}</span>
             </span>
           )}
-          {/* Amagats a mòbil per espai; el CRUD complet arribarà amb M3. */}
           <PlanActionsBar
             planId={plan.id}
             planTitle={plan.title}
@@ -83,15 +117,46 @@ export default async function PlanDetailPage({
         </div>
       </section>
 
-      {/* Body */}
+      {/* Estances (només si hi ha més d'una) */}
+      {showRooms && (
+        <section className="border-b border-ink-faint/40 bg-cream-soft/40">
+          <div className="mx-auto max-w-6xl px-6">
+            <PlanRooms
+              active={room}
+              available={available}
+              placeCount={plan.places.length}
+              photoCount={plan.photos.length}
+            />
+          </div>
+        </section>
+      )}
+
       <div className="mx-auto max-w-6xl px-6 py-12">
-        {hasSidebar ? (
+        {room === "resum" && (
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-12 items-start">
             <div className="space-y-12 min-w-0">
-              <PlanMain plan={plan} />
+              {/* Timeline només si hi ha sub-plans amb dates; ajuda a veure
+                  d'un cop d'ull "quan toca cada peça" en viatges llargs. */}
+              {children.some((c) => c.startDate && c.endDate) && (
+                <SubPlansTimeline
+                  parentStart={plan.startDate}
+                  parentEnd={plan.endDate}
+                  items={children}
+                />
+              )}
+              <section>
+                <EditableSummary planId={plan.id} value={plan.summary} />
+                <EditableBody planId={plan.id} source={plan.body}>
+                  <MarkdownBody>{plan.body}</MarkdownBody>
+                </EditableBody>
+              </section>
             </div>
             <aside className="space-y-5 lg:sticky lg:top-24">
-              <Checklist items={plan.checklist} />
+              {showToc && <PlanToc headings={tocHeadings} />}
+              {showSubPlans && (
+                <SubPlansCard parentId={plan.id} subPlans={children} />
+              )}
+              <Checklist planId={plan.id} items={plan.checklist} />
               <ExpenseTable
                 expenses={plan.expenses}
                 budgetTotal={plan.budgetTotal}
@@ -100,37 +165,28 @@ export default async function PlanDetailPage({
               <DocumentList documents={plan.documents} />
             </aside>
           </div>
-        ) : (
-          // Wishlist o plans encara sense logística: tot al main per no deixar columna fantasma.
-          <div className="max-w-3xl space-y-12">
-            <PlanMain plan={plan} />
+        )}
+
+        {room === "mapa" && (
+          <div className="space-y-8 max-w-5xl mx-auto">
+            <header>
+              <h2 className="font-serif text-2xl font-semibold">El mapa</h2>
+              <p className="text-sm text-ink-soft mt-1">
+                {plan.places.length}{" "}
+                {plan.places.length === 1 ? "lloc al recorregut" : "llocs al recorregut"}
+              </p>
+            </header>
+            <MapSection places={plan.places} />
+            <PlaceList places={plan.places} />
+          </div>
+        )}
+
+        {room === "album" && (
+          <div className="max-w-5xl mx-auto">
+            <PhotoGallery planId={plan.id} photos={plan.photos} />
           </div>
         )}
       </div>
     </article>
-  );
-}
-
-function PlanMain({ plan }: { plan: Plan }) {
-  return (
-    <>
-      <section>
-        <p className="font-serif text-xl italic text-ink-soft leading-relaxed mb-8">
-          {plan.summary}
-        </p>
-        <MarkdownBody>{plan.body}</MarkdownBody>
-      </section>
-
-      {plan.places.length > 0 && (
-        <section className="space-y-6">
-          <h2 className="font-serif text-2xl font-semibold">El mapa</h2>
-          <MapSection places={plan.places} />
-        </section>
-      )}
-
-      {plan.places.length > 0 && <PlaceList places={plan.places} />}
-
-      <PhotoGallery photos={plan.photos} />
-    </>
   );
 }

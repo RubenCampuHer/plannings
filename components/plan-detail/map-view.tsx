@@ -58,25 +58,39 @@ export default function MapView({ places }: { places: Place[] }) {
             }}
           />
         )}
-        {ordered.map((place, i) => (
-          <Marker
-            key={place.id}
-            position={[place.lat, place.lng]}
-            icon={makeIcon(String(i + 1))}
-          >
-            <Popup>
-              <div className="font-sans">
-                <div className="font-serif font-semibold text-ink">{place.name}</div>
-                {place.country && (
-                  <div className="text-xs text-ink-soft">{place.country}</div>
-                )}
-                {place.notes && (
-                  <div className="text-xs text-ink mt-1">{place.notes}</div>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {ordered.map((place, i) => {
+          // Universal URL: a mòbil obre l'app de Maps (Google o Apple segons SO),
+          // a desktop obre google.com/maps. Centra a les coordenades exactes
+          // que tenim de Nominatim.
+          const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
+          return (
+            <Marker
+              key={place.id}
+              position={[place.lat, place.lng]}
+              icon={makeIcon(String(i + 1))}
+            >
+              <Popup>
+                <div className="font-sans">
+                  <div className="font-serif font-semibold text-ink">{place.name}</div>
+                  {place.country && (
+                    <div className="text-xs text-ink-soft">{place.country}</div>
+                  )}
+                  {place.notes && (
+                    <div className="text-xs text-ink mt-1">{place.notes}</div>
+                  )}
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-2 text-xs font-medium text-peach-deep hover:text-ink underline underline-offset-2"
+                  >
+                    Obre al Maps →
+                  </a>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
     </div>
   );

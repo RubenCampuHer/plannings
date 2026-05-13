@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { CoverEditor } from "@/components/plan-detail/cover-editor";
 import { DayPlanTemplates } from "@/components/plan-detail/day-plan-templates";
 import type { DayPlanParts } from "@/components/plan-detail/day-plan-templates";
+import { InlineImageInserter } from "@/components/plan-detail/inline-image-inserter";
 import { createPlan, updatePlan } from "@/lib/plan-actions";
 import type { Plan, PlanStatus, PlanType } from "@/lib/types";
 
@@ -36,8 +38,17 @@ const TEXTAREA =
   "w-full px-3 py-2 rounded-md border border-ink-faint/60 bg-cream-soft text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
 const LABEL = "text-sm font-medium text-ink-soft";
 
-export function PlanForm({ plan }: { plan?: Plan }) {
+export function PlanForm({
+  plan,
+  parent,
+}: {
+  plan?: Plan;
+  parent?: { id: string; title: string };
+}) {
   const isEdit = Boolean(plan);
+  // Si crees un sub-plan, el parent ve per query; si edites, el plan ja en porta.
+  const parentPlanId = plan?.parentPlanId ?? parent?.id ?? "";
+  const parentTitle = parent?.title;
   const [cover, setCover] = useState<string>(plan?.cover ?? COVER_PRESETS[0]);
   const [type, setType] = useState<PlanType>(plan?.type ?? "weekend");
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +91,15 @@ export function PlanForm({ plan }: { plan?: Plan }) {
       {error && (
         <div className="rounded-md border border-peach-deep/40 bg-peach-soft/40 px-4 py-3 text-sm text-ink">
           {error}
+        </div>
+      )}
+
+      {parentPlanId && <input type="hidden" name="parentPlanId" value={parentPlanId} />}
+
+      {parentTitle && !isEdit && (
+        <div className="rounded-md border border-sage-deep/30 bg-sage-soft/30 px-4 py-3 text-sm text-ink-soft">
+          Sub-plan de{" "}
+          <span className="font-medium text-ink">{parentTitle}</span>
         </div>
       )}
 
@@ -217,7 +237,10 @@ export function PlanForm({ plan }: { plan?: Plan }) {
       {type === "day" && <DayPlanTemplates onApply={applyDayTemplate} />}
 
       <div className="space-y-2">
-        <label htmlFor="body" className={LABEL}>Cos del plan (Markdown)</label>
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <label htmlFor="body" className={LABEL}>Cos del plan (Markdown)</label>
+          {isEdit && plan && <InlineImageInserter planId={plan.id} />}
+        </div>
         <textarea
           ref={bodyRef}
           id="body"
@@ -230,30 +253,53 @@ export function PlanForm({ plan }: { plan?: Plan }) {
         />
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <label className={LABEL}>Portada</label>
-        <div className="rounded-md h-32 border border-ink-faint/40" style={{ background: cover }} />
-        <div className="flex flex-wrap gap-2">
-          {COVER_PRESETS.map((g, i) => (
-            <button
-              type="button"
-              key={i}
-              onClick={() => setCover(g)}
-              className={`h-8 w-12 rounded-md border-2 transition ${
-                cover === g ? "border-ink ring-2 ring-peach/40" : "border-ink-faint/40"
-              }`}
-              style={{ background: g }}
-              aria-label={`Degradat ${i + 1}`}
-            />
-          ))}
+
+        {isEdit && plan && (
+          <CoverEditor
+            planId={plan.id}
+            fallbackGradient={cover}
+            initialImageUrl={plan.coverImageUrl}
+            initialImagePath={plan.coverImagePath}
+          />
+        )}
+
+        {!isEdit && (
+          <div
+            className="rounded-md h-32 border border-ink-faint/40"
+            style={{ background: cover }}
+          />
+        )}
+
+        <div className="space-y-2">
+          <p className="text-xs text-ink-soft">
+            {isEdit
+              ? "Degradat (fallback quan no hi ha imatge):"
+              : "Tria un degradat — l'imatge la podràs pujar després."}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {COVER_PRESETS.map((g, i) => (
+              <button
+                type="button"
+                key={i}
+                onClick={() => setCover(g)}
+                className={`h-8 w-12 rounded-md border-2 transition ${
+                  cover === g ? "border-ink ring-2 ring-peach/40" : "border-ink-faint/40"
+                }`}
+                style={{ background: g }}
+                aria-label={`Degradat ${i + 1}`}
+              />
+            ))}
+          </div>
+          <input
+            name="cover"
+            type="text"
+            value={cover}
+            onChange={(e) => setCover(e.target.value)}
+            className={`${FIELD} font-mono text-xs`}
+          />
         </div>
-        <input
-          name="cover"
-          type="text"
-          value={cover}
-          onChange={(e) => setCover(e.target.value)}
-          className={`${FIELD} font-mono text-xs`}
-        />
       </div>
 
       <div className="flex items-center gap-3 pt-4 border-t border-ink-faint/30">

@@ -6,6 +6,7 @@ import type {
   Plan,
   PlanDocument,
   PlanPhoto,
+  PlanRef,
   PlanStatus,
   PlanType,
 } from "./types";
@@ -25,6 +26,7 @@ type PlanRow = {
   type: PlanType;
   status: PlanStatus;
   cover: string;
+  cover_image_path: string | null;
   destination: string | null;
   start_date: string | null;
   end_date: string | null;
@@ -32,6 +34,7 @@ type PlanRow = {
   budget_currency: string | null;
   summary: string;
   body: string;
+  parent_plan_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -81,18 +84,25 @@ type PhotoRow = {
   caption: string | null;
   gradient: string | null;
   taken_at: string | null;
+  storage_path: string | null;
+  mime_type: string | null;
 };
 
 const PLAN_COLUMNS =
-  "id,title,type,status,cover,destination,start_date,end_date,budget_total,budget_currency,summary,body,created_at,updated_at";
+  "id,title,type,status,cover,cover_image_path,destination,start_date,end_date,budget_total,budget_currency,summary,body,parent_plan_id,created_at,updated_at";
 
-function rowToPlanBase(r: PlanRow): Omit<Plan, "places" | "checklist" | "expenses" | "documents" | "photos"> {
+function rowToPlanBase(
+  r: PlanRow,
+  coverImageUrl?: string,
+): Omit<Plan, "places" | "checklist" | "expenses" | "documents" | "photos"> {
   return {
     id: r.id,
     title: r.title,
     type: r.type,
     status: r.status,
     cover: r.cover,
+    coverImagePath: r.cover_image_path ?? undefined,
+    coverImageUrl,
     destination: r.destination ?? undefined,
     startDate: r.start_date ?? undefined,
     endDate: r.end_date ?? undefined,
@@ -100,6 +110,7 @@ function rowToPlanBase(r: PlanRow): Omit<Plan, "places" | "checklist" | "expense
     budgetCurrency: r.budget_currency ?? undefined,
     summary: r.summary,
     body: r.body,
+    parentPlanId: r.parent_plan_id ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -148,12 +159,15 @@ function rowToDocument(r: DocumentRow): PlanDocument {
   };
 }
 
-function rowToPhoto(r: PhotoRow): PlanPhoto {
+function rowToPhoto(r: PhotoRow, signedUrl?: string): PlanPhoto {
   return {
     id: r.id,
     caption: r.caption ?? undefined,
     gradient: r.gradient ?? undefined,
     takenAt: r.taken_at ?? undefined,
+    storagePath: r.storage_path ?? undefined,
+    mimeType: r.mime_type ?? undefined,
+    imageUrl: signedUrl,
   };
 }
 
@@ -206,21 +220,40 @@ async function loadRelations(planIds: string[]): Promise<{
     return m;
   }
 
+  // Signed URLs en batch per a totes les fotos amb storage_path. TTL 1h.
+  // Les fotos heretades del seed (només `gradient`, sense storage_path) no es signen.
+  const photoRows = photos.data as PhotoRow[];
+  const paths = photoRows
+    .map((p) => p.storage_path)
+    .filter((p): p is string => Boolean(p));
+  const urlByPath = new Map<string, string>();
+  if (paths.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from("plan-photos")
+      .createSignedUrls(paths, 60 * 60);
+    for (const s of signed ?? []) {
+      if (s.signedUrl && s.path) urlByPath.set(s.path, s.signedUrl);
+    }
+  }
+
   return {
     places: groupBy(places.data as PlaceRow[], rowToPlace),
     checklist: groupBy(checklist.data as ChecklistRow[], rowToChecklist),
     expenses: groupBy(expenses.data as ExpenseRow[], rowToExpense),
     documents: groupBy(documents.data as DocumentRow[], rowToDocument),
-    photos: groupBy(photos.data as PhotoRow[], rowToPhoto),
+    photos: groupBy(photoRows, (r) =>
+      rowToPhoto(r, r.storage_path ? urlByPath.get(r.storage_path) : undefined),
+    ),
   };
 }
 
 function assemble(
   row: PlanRow,
   rel: Awaited<ReturnType<typeof loadRelations>>,
+  coverImageUrl?: string,
 ): Plan {
   return {
-    ...rowToPlanBase(row),
+    ...rowToPlanBase(row, coverImageUrl),
     places: rel.places.get(row.id) ?? [],
     checklist: rel.checklist.get(row.id) ?? [],
     expenses: rel.expenses.get(row.id) ?? [],
@@ -229,14 +262,35 @@ function assemble(
   };
 }
 
+/** Signa en batch les URLs de portada per a totes les rows que en tinguin. */
+async function signCoverUrls(
+  rows: PlanRow[],
+): Promise<Map<string, string>> {
+  const paths = rows
+    .map((r) => r.cover_image_path)
+    .filter((p): p is string => Boolean(p));
+  if (paths.length === 0) return new Map();
+  const supabase = await createSupabaseServer();
+  const { data: signed } = await supabase.storage
+    .from("plan-photos")
+    .createSignedUrls(paths, 60 * 60);
+  const map = new Map<string, string>();
+  for (const s of signed ?? []) {
+    if (s.signedUrl && s.path) map.set(s.path, s.signedUrl);
+  }
+  return map;
+}
+
 export async function getPlans(query: PlanQuery = {}): Promise<Plan[]> {
   const { type = "all", status = "all", q = "" } = query;
   const supabase = await createSupabaseServer();
 
+  // Només plans top-level (els sub-plans s'accedeixen pel detall del pare).
   let req = supabase
     .from("plans")
     .select(PLAN_COLUMNS)
     .neq("status", "archived")
+    .is("parent_plan_id", null)
     .order("updated_at", { ascending: false });
 
   if (type !== "all") req = req.eq("type", type);
@@ -254,8 +308,13 @@ export async function getPlans(query: PlanQuery = {}): Promise<Plan[]> {
   if (error) fail("plans (list)", error);
 
   const rows = (data ?? []) as PlanRow[];
-  const rel = await loadRelations(rows.map((r) => r.id));
-  return rows.map((r) => assemble(r, rel));
+  const [rel, coverUrls] = await Promise.all([
+    loadRelations(rows.map((r) => r.id)),
+    signCoverUrls(rows),
+  ]);
+  return rows.map((r) =>
+    assemble(r, rel, r.cover_image_path ? coverUrls.get(r.cover_image_path) : undefined),
+  );
 }
 
 export async function getArchivedPlans(): Promise<Plan[]> {
@@ -264,12 +323,18 @@ export async function getArchivedPlans(): Promise<Plan[]> {
     .from("plans")
     .select(PLAN_COLUMNS)
     .eq("status", "archived")
+    .is("parent_plan_id", null)
     .order("updated_at", { ascending: false });
   if (error) fail("plans (archived)", error);
 
   const rows = (data ?? []) as PlanRow[];
-  const rel = await loadRelations(rows.map((r) => r.id));
-  return rows.map((r) => assemble(r, rel));
+  const [rel, coverUrls] = await Promise.all([
+    loadRelations(rows.map((r) => r.id)),
+    signCoverUrls(rows),
+  ]);
+  return rows.map((r) =>
+    assemble(r, rel, r.cover_image_path ? coverUrls.get(r.cover_image_path) : undefined),
+  );
 }
 
 export async function getPlanById(id: string): Promise<Plan | undefined> {
@@ -283,8 +348,61 @@ export async function getPlanById(id: string): Promise<Plan | undefined> {
   if (!data) return undefined;
 
   const row = data as PlanRow;
-  const rel = await loadRelations([row.id]);
-  return assemble(row, rel);
+  const [rel, coverUrls] = await Promise.all([
+    loadRelations([row.id]),
+    signCoverUrls([row]),
+  ]);
+  const plan = assemble(
+    row,
+    rel,
+    row.cover_image_path ? coverUrls.get(row.cover_image_path) : undefined,
+  );
+
+  // Carrega títol del pare per al breadcrumb (només si en té).
+  if (row.parent_plan_id) {
+    const { data: parentRow } = await supabase
+      .from("plans")
+      .select("id,title")
+      .eq("id", row.parent_plan_id)
+      .maybeSingle();
+    if (parentRow) {
+      plan.parent = { id: parentRow.id as string, title: parentRow.title as string };
+    }
+  }
+
+  return plan;
+}
+
+/** Llista resumida dels sub-plans d'un pare (per a la card de sub-plans i el timeline). */
+export async function getChildPlanRefs(
+  parentId: string,
+): Promise<
+  Array<
+    PlanRef & {
+      type: PlanType;
+      status: PlanStatus;
+      destination?: string;
+      startDate?: string;
+      endDate?: string;
+    }
+  >
+> {
+  const supabase = await createSupabaseServer();
+  const { data, error } = await supabase
+    .from("plans")
+    .select("id,title,type,status,destination,start_date,end_date")
+    .eq("parent_plan_id", parentId)
+    .order("start_date", { ascending: true, nullsFirst: false });
+  if (error) fail(`plans (children of ${parentId})`, error);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    title: r.title as string,
+    type: r.type as PlanType,
+    status: r.status as PlanStatus,
+    destination: (r.destination as string | null) ?? undefined,
+    startDate: (r.start_date as string | null) ?? undefined,
+    endDate: (r.end_date as string | null) ?? undefined,
+  }));
 }
 
 export async function getAllPlanIds(): Promise<string[]> {
@@ -296,10 +414,43 @@ export async function getAllPlanIds(): Promise<string[]> {
 
 export async function countActivePlans(): Promise<number> {
   const supabase = await createSupabaseServer();
+  // Només top-level: els sub-plans no apareixen al home, així que el comptador
+  // tampoc no els ha de contar (sinó el text "X plans oberts" no quadra amb la grid).
   const { count, error } = await supabase
     .from("plans")
     .select("id", { count: "exact", head: true })
-    .neq("status", "archived");
+    .neq("status", "archived")
+    .is("parent_plan_id", null);
   if (error) fail("plans (count)", error);
   return count ?? 0;
+}
+
+/**
+ * Plans que "passen ara mateix": status='active' explícit OR avui dins
+ * de [start_date, end_date]. Top-level només. Exclou completed i archived.
+ *
+ * El featured de la home en pot agafar un si la llista té exactament 1.
+ */
+export async function getPlansHappeningNow(): Promise<Plan[]> {
+  const supabase = await createSupabaseServer();
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from("plans")
+    .select(PLAN_COLUMNS)
+    .is("parent_plan_id", null)
+    .not("status", "in", "(archived,completed)")
+    .or(
+      `status.eq.active,and(start_date.lte.${today},end_date.gte.${today})`,
+    )
+    .order("updated_at", { ascending: false });
+  if (error) fail("plans (happening now)", error);
+
+  const rows = (data ?? []) as PlanRow[];
+  const [rel, coverUrls] = await Promise.all([
+    loadRelations(rows.map((r) => r.id)),
+    signCoverUrls(rows),
+  ]);
+  return rows.map((r) =>
+    assemble(r, rel, r.cover_image_path ? coverUrls.get(r.cover_image_path) : undefined),
+  );
 }
