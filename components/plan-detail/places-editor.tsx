@@ -204,7 +204,7 @@ export function PlacesEditor({
                       <span className="block text-xs text-ink-soft">{p.country}</span>
                     )}
                   </span>
-                  <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 transition">
+                  <div className="flex items-center gap-0.5 opacity-70 sm:opacity-40 sm:group-hover:opacity-100 transition">
                     <button
                       type="button"
                       onClick={() => move(i, "up")}

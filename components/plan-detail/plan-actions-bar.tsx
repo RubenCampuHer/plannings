@@ -35,8 +35,10 @@ export function PlanActionsBar({ planId, planTitle, isArchived }: Props) {
     });
   }
 
+  // Al mòbil ocupa tota l'amplada i els botons queden a sota de la info strip;
+  // a sm+ es queda alineat a la dreta com abans.
   return (
-    <span className="ml-auto hidden sm:flex items-center gap-2">
+    <span className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center gap-2 mt-1 sm:mt-0">
       <Button
         variant="ghost"
         size="sm"

@@ -78,7 +78,7 @@ export function PhotoGallery({
                   onClick={() => handleDelete(p.id)}
                   disabled={pending}
                   aria-label="Esborrar foto"
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50 transition-opacity grid place-items-center h-8 w-8 rounded-full bg-black/40 hover:bg-peach-deep text-white backdrop-blur-sm"
+                  className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50 transition-opacity grid place-items-center h-8 w-8 rounded-full bg-black/40 hover:bg-peach-deep text-white backdrop-blur-sm"
                 >
                   <Trash2 className="h-4 w-4" strokeWidth={2} />
                 </button>

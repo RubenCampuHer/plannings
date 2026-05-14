@@ -66,10 +66,10 @@ export function SiteHeader({ user }: { user: { email: string } | null }) {
             <>
               <NavLink href="/" label="Plans" active={isPlans} />
               <NavLink href="/archive" label="Arxiu" active={isArchive} />
-              <Link href="/plans/new" className="ml-2 hidden sm:inline-flex">
+              <Link href="/plans/new" className="ml-1 sm:ml-2 inline-flex" aria-label="Nou plan">
                 <Button size="sm">
                   <Plus className="h-4 w-4" strokeWidth={2.5} />
-                  Nou plan
+                  <span className="hidden sm:inline">Nou plan</span>
                 </Button>
               </Link>
               <UserMenu email={user.email} />
