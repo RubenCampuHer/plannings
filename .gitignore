@@ -49,3 +49,6 @@ next-env.d.ts
 .claude/
 
 .vercel
+
+# Eval reports — outputs locals, no van al repo
+scripts/eval-copilot/reports/

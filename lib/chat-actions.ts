@@ -3,8 +3,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServer } from "./supabase-server";
-import { formatDateRange } from "./format";
-import { extractHeadings } from "./toc";
+import { buildCopilotSystemPrompt } from "./chat-prompt";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY;
 
@@ -108,120 +107,43 @@ export async function sendChatMessage(
       .order("created_at", { ascending: true }),
   ]);
 
-  const placesList =
-    placesRes.data && placesRes.data.length > 0
-      ? placesRes.data
-          .map((p) => `- ${p.name}${p.country ? ` (${p.country})` : ""}`)
-          .join("\n")
-      : "(cap)";
-
-  const checklistList =
-    checklistRes.data && checklistRes.data.length > 0
-      ? checklistRes.data.map((c) => `- [${c.done ? "x" : " "}] ${c.text}`).join("\n")
-      : "(cap)";
-
-  const dateRange = formatDateRange(
-    plan.start_date ?? undefined,
-    plan.end_date ?? undefined,
-  );
-
-  const typeLabelOf = (t: string) =>
-    ({ deep: "viatge llarg", weekend: "cap de setmana", day: "dia" })[
-      t as "deep" | "weekend" | "day"
-    ] ?? t;
-
-  // Bloc d'informació del pla pare (si en té).
-  const parentBlock = parentRes.data
-    ? `\nAquest pla forma part d'un viatge més gran:
-- "${parentRes.data.title}" (${typeLabelOf(parentRes.data.type)}${
-        parentRes.data.destination ? `, ${parentRes.data.destination}` : ""
-      }${
-        formatDateRange(
-          parentRes.data.start_date ?? undefined,
-          parentRes.data.end_date ?? undefined,
-        )
-          ? `, ${formatDateRange(
-              parentRes.data.start_date ?? undefined,
-              parentRes.data.end_date ?? undefined,
-            )}`
-          : ""
-      }). Resum: ${parentRes.data.summary}. Enllaç: /plans/${parentRes.data.id}`
-    : "";
-
-  // Bloc dels sub-plans (fills) si n'hi ha.
-  const children = childrenRes.data ?? [];
-  const childrenBlock =
-    children.length > 0
-      ? `\nSub-plans (peces d'aquest viatge):\n${children
-          .map((c) => {
-            const dr = formatDateRange(
-              c.start_date ?? undefined,
-              c.end_date ?? undefined,
-            );
-            return `- "${c.title}" (${typeLabelOf(c.type)}${
-              c.destination ? `, ${c.destination}` : ""
-            }${dr ? `, ${dr}` : ""}): ${c.summary}. Enllaç: /plans/${c.id}`;
-          })
-          .join("\n")}`
-      : "";
-
-  // Llista de seccions H2 i H3 del body — permet al copilot remetre l'usuari
-  // a una sub-secció concreta amb un enllaç clicable. Indenta les H3 perquè
-  // es vegi la jerarquia.
-  const headings = extractHeadings(plan.body, [2, 3]);
-  const headingsBlock =
-    headings.length > 0
-      ? `\nSeccions del cos del plan (slugs que pots usar als enllaços — prefereix H3 si és més específic):\n${headings
-          .map((h) =>
-            h.level === 3
-              ? `  - H3 "${h.text}" → #${h.id}`
-              : `- H2 "${h.text}" → #${h.id}`,
-          )
-          .join("\n")}`
-      : "";
-
-  const systemInstruction = `Ets el copilot del pla "${plan.title}". Aquí tens tota la informació actual:
-
-Tipus: ${typeLabelOf(plan.type)}
-Destinació: ${plan.destination ?? "(sense definir)"}
-Dates: ${dateRange ?? "(sense definir)"}
-Resum: ${plan.summary}
-${parentBlock}${childrenBlock}
-
-Llocs al mapa:
-${placesList}
-
-Checklist:
-${checklistList}
-${headingsBlock}
-
-Cos del pla (Markdown, pot incloure imatges \`![](pp:...)\`):
-\`\`\`
-${plan.body}
-\`\`\`
-
-Regles de resposta:
-- Respon SEMPRE en català, to càlid i personal, com un amic que ajuda a planificar (no corporatiu).
-- Sigues breu (1-4 paràgrafs) i útil. Pots usar llistes si convé.
-- Si l'usuari et demana modificar el plan (afegir lloc, canviar body, etc.), respon-li que de moment només pots ajudar amb idees i preguntes; per editar ha d'anar al detall del plan (botó "Editar") o usar el Polish amb IA.
-
-CÀLCULS I SÍNTESI (molt important):
-Quan l'usuari pregunti sobre xifres (pressupost per país, durada, totals, mitjanes, comparacions, etc.), procedeix així pas a pas:
-
-1. LLEGEIX TOT EL BODY DE NOU buscant TOTES les dades rellevants. NO et conformis amb la primera xifra que trobis ni saltis al pressupost global.
-2. PRIORITZA dades específiques sobre agregades. Si el body té "Indonèsia: ~50€/dia" I també "Àsia: 5000-6500€", per a una pregunta sobre Indonèsia usa els 50€/dia específics, no la mitjana del total d'Àsia.
-3. CROSS-REFERENCE: si tens dades específiques per país/secció I un agregat global, comprova si quadren. Si no, comenta la discrepància ("la suma per països dóna 4200€, l'agregat per Àsia és 5000-6500€ → la diferència cobreix imprevistos o altres països").
-4. MOSTRA EL CÀLCUL component a component, no només el resultat: "Indonèsia: 28 dies × 50€/dia = 1400€ · Cambodja: 14 dies × 40€/dia = 560€ → Total: 1960€ per a la parella". Així l'usuari pot validar.
-5. SI FALTEN dades concretes per algun tram, estima amb el que tens (mitjana de països veïns, costos similars) i DIGUES clarament els supòsits.
-6. SI REALMENT no hi ha cap dada relacionada al body, aproxima sense inventar xifres i suggereix on afegir-la.
-
-NO et limitis a "la info no és explícita" si pots desglossar i calcular amb el que hi ha. NO facis mitjanes uniformes si tens costos diferents per regió.
-
-ENLLAÇOS (important):
-- Quan remetis a una secció del body, prefereix una H3 específica abans que una H2 general. P.ex. si la pregunta és sobre vols, enllaça \`[Vols](#vols)\` en comptes de \`[Pressupost](#pressupost)\`.
-- Sintaxi: \`[nom de la secció](#slug)\` usant SEMPRE els slugs exactes de la llista "Seccions del cos del plan". MAI inventis slugs.
-- Per remetre al pla pare o a un sub-plan, usa \`[títol](/plans/slug-del-pla)\` amb els enllaços exactes que apareixen al context.
-- Si no hi ha cap secció rellevant, no posis cap enllaç forçat.`;
+  const systemInstruction = buildCopilotSystemPrompt({
+    title: plan.title,
+    type: plan.type,
+    destination: plan.destination ?? undefined,
+    startDate: plan.start_date ?? undefined,
+    endDate: plan.end_date ?? undefined,
+    summary: plan.summary,
+    body: plan.body,
+    places: (placesRes.data ?? []).map((p) => ({
+      name: p.name as string,
+      country: (p.country as string | null) ?? undefined,
+    })),
+    checklist: (checklistRes.data ?? []).map((c) => ({
+      text: c.text as string,
+      done: c.done as boolean,
+    })),
+    parent: parentRes.data
+      ? {
+          id: parentRes.data.id as string,
+          title: parentRes.data.title as string,
+          type: parentRes.data.type as string,
+          destination: (parentRes.data.destination as string | null) ?? undefined,
+          startDate: (parentRes.data.start_date as string | null) ?? undefined,
+          endDate: (parentRes.data.end_date as string | null) ?? undefined,
+          summary: parentRes.data.summary as string,
+        }
+      : null,
+    children: (childrenRes.data ?? []).map((c) => ({
+      id: c.id as string,
+      title: c.title as string,
+      type: c.type as string,
+      destination: (c.destination as string | null) ?? undefined,
+      startDate: (c.start_date as string | null) ?? undefined,
+      endDate: (c.end_date as string | null) ?? undefined,
+      summary: c.summary as string,
+    })),
+  });
 
   // Limita el context als darrers 20 missatges per estalviar tokens.
   const recentMessages = (messagesRes.data ?? []).slice(-20);
