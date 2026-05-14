@@ -78,15 +78,29 @@ export async function MarkdownBody({ children }: { children: string }) {
               </li>
             );
           },
-          img: ({ src, alt }) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={typeof src === "string" ? src : undefined}
-              alt={alt ?? ""}
-              loading="lazy"
-              className="my-6 rounded-[var(--radius-card)] border border-ink-faint/30 max-w-full h-auto"
-            />
-          ),
+          img: ({ src, alt }) => {
+            const url = typeof src === "string" ? src : undefined;
+            const caption = alt?.trim();
+            // Usem <span> en comptes de <figure> perquè les imatges Markdown
+            // estan dins d'un <p> automàtic — <figure> dins <p> seria HTML
+            // invàlid. `display: block` ens dóna el layout visual de figure.
+            return (
+              <span className="block my-8">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={caption ?? ""}
+                  loading="lazy"
+                  className="block w-full h-auto rounded-[var(--radius-card)] border border-ink-faint/30 shadow-[0_10px_30px_-12px_rgba(58,46,42,0.25)]"
+                />
+                {caption && (
+                  <span className="block font-hand text-base text-ink-soft text-center mt-3 -rotate-[0.6deg]">
+                    {caption}
+                  </span>
+                )}
+              </span>
+            );
+          },
         }}
       >
         {body}

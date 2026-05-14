@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { PlanForm } from "@/components/plan-detail/plan-form";
 import { PlacesEditor } from "@/components/plan-detail/places-editor";
+import { PolishImagesButton } from "@/components/plan-detail/polish-images-button";
 import { PolishWithAi } from "@/components/plan-detail/polish-with-ai";
 import { getPlanById } from "@/lib/plans";
 
@@ -49,8 +50,9 @@ export default async function EditPlanPage({
 
       <PlanForm plan={plan} />
 
-      <div className="mt-16">
+      <div className="mt-16 space-y-6">
         <PolishWithAi mode="edit" planId={plan.id} />
+        <PolishImagesButton planId={plan.id} />
       </div>
 
       <div className="mt-12 pt-10 border-t border-ink-faint/30">

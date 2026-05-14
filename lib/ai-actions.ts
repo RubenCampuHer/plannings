@@ -4,6 +4,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServer } from "./supabase-server";
 import { geocodeSearch } from "./place-actions";
+import { downloadPexelsImage, searchPexelsTop } from "./pexels-actions";
 import type { PlanType } from "./types";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY;
@@ -365,6 +366,296 @@ export async function addAiChecklistItems(
   if (error) throw new Error(`Afegir checklist: ${error.message}`);
   revalidatePath(`/plans/${planId}`);
   revalidatePath(`/plans/${planId}/edit`);
+}
+
+// =====================================================================
+// M7 — Polish imatges amb IA (Gemini + Pexels)
+// =====================================================================
+
+const IMAGE_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    images: {
+      type: Type.ARRAY,
+      description:
+        "Suggeriments d'imatges per il·lustrar el plan. Cobreix moments/llocs clau, no repeteixis temàtiques.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          search_query: {
+            type: Type.STRING,
+            description:
+              "Query en anglès per buscar a Pexels. Concreta i visual (ex. 'Bangkok night market food', 'Hokkaido snow onsen', 'Tuscany vineyard sunset'). Inclou lloc + element visual.",
+          },
+          alt_text: {
+            type: Type.STRING,
+            description:
+              "Descripció curta en català per al figcaption + l'àlbum. Estil diari personal, 4-9 paraules. Ex: 'Llums de nit a Bangkok' o 'Onsen sota la neu, Hokkaido'.",
+          },
+          placement: {
+            type: Type.STRING,
+            description:
+              "On va al body: 'intro' (al principi), 'outro' (al final), o el text exacte d'una de les headings ## existents. Si no n'hi ha, usa 'outro'.",
+          },
+        },
+        required: ["search_query", "alt_text", "placement"],
+      },
+    },
+  },
+  required: ["images"],
+};
+
+const IMAGE_SYSTEM_INSTRUCTION = `Ets un editor d'imatges per a una agenda íntima de viatges en català.
+
+Regles:
+- Les search queries van en anglès perquè Pexels té molt més material indexat així.
+- L'alt_text va en català, curt i evocador (estil diari personal). NO repeteixis "foto de" o "imatge de".
+- NO suggereixis més imatges de les demanades — millor poques i ben repartides que moltes redundants.
+- Reparteix les imatges entre seccions diferents. Si una secció ja tindria 2 imatges, posa la següent en una altra heading.
+- Respon SEMPRE seguint l'esquema JSON. No afegeixis text fora del JSON.`;
+
+function targetImageCount(
+  durationDays: number | null,
+  type: PlanType,
+): { min: number; max: number } {
+  if (type === "day" || durationDays == null || durationDays <= 1) {
+    return { min: 2, max: 3 };
+  }
+  if (durationDays <= 4) return { min: 3, max: 5 };
+  if (durationDays <= 10) return { min: 4, max: 6 };
+  if (durationDays <= 20) return { min: 5, max: 7 };
+  return { min: 6, max: 8 };
+}
+
+/** Extreu títols de headings ## per donar context a la IA. */
+function extractH2Titles(body: string): string[] {
+  const titles: string[] = [];
+  const re = /^## (.+)$/gm;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    titles.push(m[1].trim());
+  }
+  return titles;
+}
+
+/**
+ * Insereix `![alt](pp:path)` al body segons el `placement` de cada imatge.
+ * 'intro' → abans del primer H2. 'outro' o cap match → al final.
+ * Match d'una heading existent → al final d'aquella secció (just abans del
+ * següent H2).
+ */
+function insertInlineImages(
+  body: string,
+  images: Array<{ path: string; alt: string; placement: string }>,
+): string {
+  const headings: Array<{ title: string; start: number }> = [];
+  const h2Re = /^## (.+)$/gm;
+  let m;
+  while ((m = h2Re.exec(body)) !== null) {
+    headings.push({ title: m[1].trim(), start: m.index });
+  }
+
+  type Insertion = { pos: number; text: string };
+  const insertions: Insertion[] = [];
+
+  for (const img of images) {
+    const target = img.placement.toLowerCase().trim();
+    const imgMd = `\n\n![${img.alt}](pp:${img.path})\n\n`;
+    let pos: number;
+
+    if (target === "intro" || target === "") {
+      // Just abans del primer H2; si no n'hi ha, al principi.
+      pos = headings[0]?.start ?? 0;
+    } else if (target === "outro" || target === "final" || headings.length === 0) {
+      pos = body.length;
+    } else {
+      const idx = headings.findIndex(
+        (h) =>
+          h.title.toLowerCase().includes(target) ||
+          target.includes(h.title.toLowerCase()),
+      );
+      if (idx === -1) {
+        pos = body.length;
+      } else {
+        pos = idx + 1 < headings.length ? headings[idx + 1].start : body.length;
+      }
+    }
+    insertions.push({ pos, text: imgMd });
+  }
+
+  // Inserim de més tardà a més primer perquè els offsets no es desplacin.
+  insertions.sort((a, b) => b.pos - a.pos);
+  let result = body;
+  for (const ins of insertions) {
+    result = result.slice(0, ins.pos) + ins.text + result.slice(ins.pos);
+  }
+  // Normalitza els salts de línia repetits a màxim 2 consecutius.
+  return result.replace(/\n{3,}/g, "\n\n").trim() + "\n";
+}
+
+function extFromContentType(mime: string): string {
+  if (/png/i.test(mime)) return "png";
+  if (/webp/i.test(mime)) return "webp";
+  return "jpg";
+}
+
+export type ImagePolishResult = {
+  added: number;
+  failed: string[];
+  bodyUpdated: boolean;
+};
+
+/**
+ * Una sola crida que: pregunta a Gemini quines imatges encaixen, busca cadascuna
+ * a Pexels, descarrega + puja al bucket, insereix-les inline al body i les
+ * afegeix a la taula `plan_photos`. La quantitat depèn de la durada del viatge.
+ */
+export async function polishImagesWithAi(
+  planId: string,
+): Promise<ImagePolishResult> {
+  const supabase = await createSupabaseServer();
+
+  const { data: plan, error: planError } = await supabase
+    .from("plans")
+    .select("id,title,type,destination,start_date,end_date,summary,body")
+    .eq("id", planId)
+    .single();
+  if (planError || !plan) throw new Error("Plan no trobat");
+
+  const planType = plan.type as PlanType;
+  const durationDays = calcDurationDays(plan.start_date ?? undefined, plan.end_date ?? undefined);
+  const counts = targetImageCount(durationDays, planType);
+  const headings = extractH2Titles(plan.body);
+  const typeLabel = { deep: "viatge llarg", weekend: "cap de setmana", day: "dia" }[planType];
+
+  const headingsList =
+    headings.length > 0
+      ? headings.map((h) => `- "${h}"`).join("\n")
+      : "(cap heading ## al body — usa 'outro' per a totes les imatges)";
+
+  const userMessage = `Plan:
+
+Tipus: ${typeLabel}
+Títol: ${plan.title}
+Destinació: ${plan.destination ?? "(sense definir)"}
+Durada: ${durationLabel(durationDays)}
+Resum: ${plan.summary}
+
+Cos:
+\`\`\`markdown
+${plan.body}
+\`\`\`
+
+Headings ## existents al body (usables com a placement):
+${headingsList}
+
+Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el plan. Reparteix-les entre seccions diferents. Search queries en anglès, alt_text en català, placement = 'intro' | 'outro' | text exacte d'una heading.`;
+
+  const client = getClient();
+  let response;
+  try {
+    response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: userMessage }] }],
+      config: {
+        systemInstruction: IMAGE_SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: IMAGE_RESPONSE_SCHEMA,
+        temperature: 0.7,
+      },
+    });
+  } catch (e) {
+    throw translateGeminiError(e);
+  }
+
+  const text = response.text;
+  if (!text) throw new Error("La IA no ha tornat cap suggeriment.");
+
+  let parsed: {
+    images: Array<{ search_query: string; alt_text: string; placement: string }>;
+  };
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Resposta de la IA no és JSON vàlid.");
+  }
+
+  const suggestions = (parsed.images ?? []).slice(0, counts.max);
+  if (suggestions.length === 0) {
+    throw new Error("La IA no ha suggerit cap imatge. Prova-ho de nou.");
+  }
+
+  // Per a cada suggeriment: cerca a Pexels, descarrega, puja al bucket.
+  // Es fan en paral·lel — Pexels admet ràfegues curtes per a la free tier.
+  type Applied = { path: string; alt: string; placement: string; mime: string };
+  const failed: string[] = [];
+  const settled = await Promise.allSettled(
+    suggestions.map(async (s): Promise<Applied | null> => {
+      const photo = await searchPexelsTop(s.search_query);
+      if (!photo) return null;
+      const { buffer, contentType } = await downloadPexelsImage(photo.largeUrl);
+      const ext = extFromContentType(contentType);
+      const uuid = crypto.randomUUID();
+      const path = `${planId}/polish-${uuid}.${ext}`;
+
+      const { error: upErr } = await supabase.storage
+        .from("plan-photos")
+        .upload(path, buffer, { contentType, upsert: false });
+      if (upErr) throw new Error(`Pujar imatge: ${upErr.message}`);
+
+      return { path, alt: s.alt_text, placement: s.placement, mime: contentType };
+    }),
+  );
+
+  const applied: Applied[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === "fulfilled" && r.value) {
+      applied.push(r.value);
+    } else {
+      failed.push(suggestions[i].search_query);
+    }
+  }
+
+  if (applied.length === 0) {
+    return { added: 0, failed, bodyUpdated: false };
+  }
+
+  // Inserim al body i actualitzem la row del plan.
+  const newBody = insertInlineImages(plan.body, applied);
+  const { error: bodyErr } = await supabase
+    .from("plans")
+    .update({ body: newBody, updated_at: new Date().toISOString() })
+    .eq("id", planId);
+  if (bodyErr) {
+    // Si el body falla, intentem ser conservadors: les imatges ja són al bucket
+    // i les volem mostrar igualment a l'àlbum (sota); no rollback de la pujada.
+    throw new Error(`Actualitzar body: ${bodyErr.message}`);
+  }
+
+  // Files a plan_photos perquè les imatges també surtin a l'Àlbum.
+  const photoRows = applied.map((a) => ({
+    id: crypto.randomUUID(),
+    plan_id: planId,
+    storage_path: a.path,
+    mime_type: a.mime,
+    caption: a.alt,
+  }));
+  const { error: photosErr } = await supabase.from("plan_photos").insert(photoRows);
+  if (photosErr) {
+    // No és crític si falla — les imatges segueixen visibles inline al body.
+    // El log queda al server, l'usuari veu el body actualitzat.
+    console.error(`plan_photos insert: ${photosErr.message}`);
+  }
+
+  revalidatePath(`/plans/${planId}`);
+  revalidatePath(`/plans/${planId}/edit`);
+
+  return {
+    added: applied.length,
+    failed,
+    bodyUpdated: true,
+  };
 }
 
 export async function applyAiPlaceSuggestions(
