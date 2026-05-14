@@ -1,9 +1,13 @@
-// Bateria de preguntes per avaluar el copilot. Cobreix els casos d'ús que ens
-// importen: càlculs amb dades específiques vs agregades, comparacions, links
-// a sub-seccions, navegació entre pare/fill, recomanacions basades en el body.
+// Bateria de preguntes per avaluar el copilot. Cada cas porta el `mode` amb
+// què s'ha de provar (conversa o edicio). Conversa = només Q&A, sense tools.
+// Edicio = amb tools, ha de cridar funcions per a ordres imperatives.
+
+import type { ChatMode } from "../../lib/chat-prompt";
 
 export type EvalCase = {
   id: string;
+  /** En quin mode del chat es prova aquest cas. */
+  mode: ChatMode;
   /** La pregunta que farem al copilot. */
   question: string;
   /** Categories que ens interessa que el judge valori (a part dels comuns). */
@@ -16,13 +20,18 @@ export type EvalCase = {
     | "recommendation"
     | "comparison"
     | "honest-fallback"
+    | "function-call"
+    | "no-function-call"
+    | "mode-redirect"
   >;
   /** Per al judge: què hauria de fer una resposta excel·lent. */
   ideal_behavior: string;
 };
 
 export const CASES: EvalCase[] = [
+  // ============== MODE CONVERSA: només Q&A, mai function calls ==============
   {
+    mode: "conversa",
     id: "budget-aggregate",
     question: "Quin és el pressupost global del viatge?",
     focus: ["calculation"],
@@ -30,6 +39,7 @@ export const CASES: EvalCase[] = [
       "Donar la xifra exacta del body i, si hi ha desglossament, dir-ne els components.",
   },
   {
+    mode: "conversa",
     id: "budget-per-country",
     question:
       "Quant ens gastarem aproximadament a Indonèsia? I a Cambodja? Fes-ho per a la parella.",
@@ -43,6 +53,7 @@ export const CASES: EvalCase[] = [
       "Buscar el cost diari específic de cada país (si hi és) i multiplicar per dies. NO promediar uniformement el pressupost agregat d'Àsia. Mostrar els components. Enllaçar a la sub-secció específica (H3) si existeix.",
   },
   {
+    mode: "conversa",
     id: "compare-cost",
     question: "Quin país sortirà més car, Indonèsia o Tailàndia?",
     focus: ["comparison", "specific-over-aggregate", "calculation"],
@@ -50,6 +61,7 @@ export const CASES: EvalCase[] = [
       "Comparar costos diaris específics si hi són; si no, mirar la durada/activitats descrites. Argumentar.",
   },
   {
+    mode: "conversa",
     id: "duration-per-region",
     question: "Quants dies passem a cada país de la fase asiàtica?",
     focus: ["calculation", "section-linking"],
@@ -57,6 +69,7 @@ export const CASES: EvalCase[] = [
       "Llistar país + dies. Si dates específiques existeixen, calcular-les. Enllaçar a la secció corresponent.",
   },
   {
+    mode: "conversa",
     id: "section-link",
     question:
       "On parla el pla del transport intern? Vull veure els detalls exactes.",
@@ -65,6 +78,7 @@ export const CASES: EvalCase[] = [
       "Enllaçar a la H3 més específica si existeix (no a una H2 genèrica com 'Pressupost' o 'Detalls').",
   },
   {
+    mode: "conversa",
     id: "first-day",
     question: "Què tenim previst per al primer dia del viatge?",
     focus: ["section-linking", "recommendation"],
@@ -72,6 +86,7 @@ export const CASES: EvalCase[] = [
       "Resumir el que diu el body sobre el primer dia. Enllaçar a la secció si n'hi ha.",
   },
   {
+    mode: "conversa",
     id: "recommend-restaurant",
     question:
       "Recomana'm 2 restaurants típics per a la zona on anem primer. Que siguin assequibles.",
@@ -80,6 +95,7 @@ export const CASES: EvalCase[] = [
       "Donar recomanacions concretes amb noms reals, sense inventar preus. Si el body cita restaurants, mencionar-los.",
   },
   {
+    mode: "conversa",
     id: "checklist-state",
     question: "Què ens queda per preparar abans de marxar?",
     focus: ["recommendation"],
@@ -87,6 +103,7 @@ export const CASES: EvalCase[] = [
       "Llistar els items de checklist no fets. Si tots són fets, dir-ho. Suggerir afegits si la checklist sembla buida.",
   },
   {
+    mode: "conversa",
     id: "no-data-fallback",
     question: "Què es paga d'assegurança mèdica per a un viatge així?",
     focus: ["honest-fallback"],
@@ -94,33 +111,55 @@ export const CASES: EvalCase[] = [
       "Si el body no en parla, dir-ho clarament i donar un ordre de magnitud raonable (sense fingir que ho sap del body). Suggerir afegir-ho a la checklist o al pressupost.",
   },
   {
+    mode: "conversa",
     id: "subplan-summary",
     question: "Quin és l'estat del Vietnam dins del viatge?",
     focus: ["subplan-navigation", "section-linking"],
     ideal_behavior:
       "Si Vietnam és un sub-plan, mencionar-ho i enllaçar a /plans/{id}. Si està descrit al body, resumir-lo.",
   },
-  // ===== M8.2: comandes que haurien de generar function calls =====
   {
+    mode: "conversa",
+    id: "conversa-redirect-on-command",
+    question: "Afegeix Cinema Verdi Barcelona al mapa.",
+    focus: ["mode-redirect"],
+    ideal_behavior:
+      "Al mode CONVERSA no pot cridar funcions. Hauria de dir amablement que cal canviar a mode Edició per fer-ho — i opcionalment preparar la cerca o oferir-se a fer-ho un cop canviï.",
+  },
+
+  // ============== MODE EDICIÓ: cridar funcions per a ordres ==============
+  {
+    mode: "edicio",
     id: "command-add-place",
     question: "Afegeix Cinema Verdi Barcelona al mapa.",
-    focus: ["recommendation"],
+    focus: ["function-call"],
     ideal_behavior:
-      "Hauria de cridar la funció add_place amb name='Cinema Verdi' (o similar) i search_query útil per Nominatim. El text de la resposta hauria de ser BREU confirmant la proposta (ex. 'D'acord, et proposo afegir-lo'). NO ha d'inventar text llarg.",
+      "Hauria de cridar add_place amb name='Cinema Verdi' i search_query útil per Nominatim. Text breu confirmant la proposta. NO ha d'abocar text llarg.",
   },
   {
-    id: "command-add-checklist",
+    mode: "edicio",
+    id: "command-add-checklist-multi",
     question:
       "Afegeix 'Comprar adaptadors universals' i 'Reservar hotel a Yogyakarta' a la checklist.",
-    focus: ["recommendation"],
+    focus: ["function-call"],
     ideal_behavior:
-      "Hauria de cridar la funció add_checklist_item DOS COPS, una per cada item. Text breu confirmant la proposta.",
+      "Hauria de cridar add_checklist_item DOS COPS, un per cada item. Text breu confirmant. El sistema ja rebutja duplicats programàticament.",
   },
   {
-    id: "qa-no-command",
-    question: "Què em recomanaries afegir a la checklist?",
-    focus: ["recommendation"],
+    mode: "edicio",
+    id: "command-add-subplan",
+    question:
+      "Crea un sub-plan per a un cap de setmana a Praga el 12-14 d'octubre de 2027.",
+    focus: ["function-call"],
     ideal_behavior:
-      "Aquesta és una pregunta de Q&A (recomanació) — NO ha de cridar add_checklist_item perquè l'usuari no ha demanat afegir res explícitament. Hauria de respondre amb suggeriments en text. Si l'usuari després diu 'afegeix-los', llavors sí cridaria la funció.",
+      "Hauria de cridar add_subplan amb plan_type='weekend', dates correctes (2027-10-12 / 2027-10-14), title i summary curt. Text breu confirmant.",
+  },
+  {
+    mode: "edicio",
+    id: "qa-no-command-edit-mode",
+    question: "Què em recomanaries afegir a la checklist?",
+    focus: ["no-function-call", "recommendation"],
+    ideal_behavior:
+      "AQUESTA és una pregunta (Q&A), no una ordre. Encara que estiguem en mode edició, NO ha de cridar add_checklist_item. Hauria de respondre amb suggeriments en text i preguntar si vol que els afegeixi.",
   },
 ];

@@ -32,7 +32,9 @@ import {
   sendChatMessage,
   type ChatMessage,
 } from "@/lib/chat-actions";
-import type { Proposal } from "@/lib/chat-prompt";
+import type { ChatMode, Proposal } from "@/lib/chat-prompt";
+
+const MODE_KEY = "plannings:chat-mode";
 
 /**
  * Sala de xat amb el copilot del plan. Llegeix tot el context (metadades +
@@ -53,11 +55,31 @@ export function PlanChat({
   const [pending, setPending] = useState(false);
   const [clearing, startClear] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<ChatMode>("conversa");
   // Set d'ids de propostes en procés (aplicant/cancel·lant) per mostrar loaders
   // a les targetes corresponents sense bloquejar tot el xat.
   const [busyProposals, setBusyProposals] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Restaura el mode triat per l'usuari (per dispositiu).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MODE_KEY);
+      if (saved === "conversa" || saved === "edicio") setMode(saved);
+    } catch {
+      // ignorat
+    }
+  }, []);
+
+  // Persisteix el mode quan canvia.
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_KEY, mode);
+    } catch {
+      // ignorat
+    }
+  }, [mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,7 +122,7 @@ export function PlanChat({
     setPending(true);
 
     try {
-      await sendChatMessage(planId, text);
+      await sendChatMessage(planId, text, mode);
       // Recarrega tots els missatges per tenir el user message amb el seu uuid
       // real i l'assistant amb propostes correctament formatades.
       const fresh = await getChatMessages(planId);
@@ -172,25 +194,27 @@ export function PlanChat({
 
   return (
     <section className="flex flex-col h-full min-h-0">
-      <header className="shrink-0 mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-ink-soft leading-relaxed">
-            Pregunta'm o demana'm afegir coses al plan{" "}
-            <span className="italic text-ink truncate">{planTitle}</span>.
-          </p>
+      <header className="shrink-0 mb-3 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <ModeToggle mode={mode} onChange={setMode} disabled={pending} />
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={clearConversation}
+              disabled={clearing}
+              className="text-xs text-ink-soft hover:text-peach-deep inline-flex items-center gap-1 shrink-0"
+              title="Esborrar tota la conversa"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+              Esborrar
+            </button>
+          )}
         </div>
-        {messages.length > 0 && (
-          <button
-            type="button"
-            onClick={clearConversation}
-            disabled={clearing}
-            className="text-xs text-ink-soft hover:text-peach-deep inline-flex items-center gap-1 shrink-0"
-            title="Esborrar tota la conversa"
-          >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
-            Esborrar
-          </button>
-        )}
+        <p className="text-[11px] text-ink-soft leading-snug">
+          {mode === "conversa"
+            ? "Mode conversa: el copilot només respon. Per fer canvis al plan, passa a Edició."
+            : "Mode edició: el copilot pot proposar afegir llocs/checklist/sub-plans. Tu confirmes."}
+        </p>
       </header>
 
       <div
@@ -248,7 +272,11 @@ export function PlanChat({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Pregunta o demana afegir alguna cosa…"
+          placeholder={
+            mode === "conversa"
+              ? "Pregunta'm sobre el plan…"
+              : "Demana'm afegir un lloc, item de checklist o sub-plan…"
+          }
           rows={2}
           disabled={pending}
           className="w-full px-3 py-2 pr-12 rounded-md border border-ink-faint/60 bg-cream-soft text-ink text-sm placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40 resize-none disabled:opacity-60"
@@ -271,6 +299,45 @@ export function PlanChat({
         ⌘/Ctrl + Enter per enviar
       </p>
     </section>
+  );
+}
+
+function ModeToggle({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: ChatMode;
+  onChange: (m: ChatMode) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Mode del copilot"
+      className="inline-flex p-0.5 rounded-full bg-cream-soft border border-ink-faint/40 text-xs font-medium"
+    >
+      {(["conversa", "edicio"] as const).map((m) => {
+        const active = mode === m;
+        return (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            disabled={disabled}
+            onClick={() => onChange(m)}
+            className={`px-3 py-1 rounded-full transition-colors disabled:opacity-50 ${
+              active
+                ? "bg-peach text-white shadow-[0_1px_0_0_rgba(226,122,69,0.25)]"
+                : "text-ink-soft hover:text-ink"
+            }`}
+          >
+            {m === "conversa" ? "Conversa" : "Edició"}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -453,17 +520,31 @@ function describeProposal(p: Proposal): {
 function ProposalDetails({ proposal }: { proposal: Proposal }) {
   const args = proposal.arguments;
   switch (proposal.function_name) {
-    case "add_place":
+    case "add_place": {
+      const geo = proposal.preview?.geocoded;
       return (
         <div className="text-xs text-ink-soft mt-1 space-y-0.5">
-          <p>
-            🔍 <span className="font-mono">{String(args.search_query ?? "")}</span>
-          </p>
+          {geo ? (
+            <>
+              <p>
+                📍 <span className="text-ink">{geo.displayName}</span>
+              </p>
+              <p className="font-mono text-[10px]">
+                {geo.lat.toFixed(4)}, {geo.lng.toFixed(4)}
+                {geo.country ? ` · ${geo.country}` : ""}
+              </p>
+            </>
+          ) : (
+            <p>
+              🔍 <span className="font-mono">{String(args.search_query ?? "")}</span>
+            </p>
+          )}
           {typeof args.why === "string" && args.why.trim() && (
             <p className="italic">{args.why}</p>
           )}
         </div>
       );
+    }
     case "add_checklist_item":
       return null;
     case "add_subplan":

@@ -101,7 +101,22 @@ export type Proposal = {
   /** Path opcional si el resultat porta a una nova entitat (ex. /plans/x). */
   result_path?: string;
   applied_at?: string;
+  /** Preview pre-resolt: per add_place, geocoding fet abans de la confirmació
+   *  perquè l'usuari sàpiga exactament on aterrarà el lloc. Null si encara no
+   *  s'ha resolt o no aplica a aquesta funció. */
+  preview?: {
+    /** add_place: ubicació geocodificada. */
+    geocoded?: {
+      name: string;
+      country: string | null;
+      lat: number;
+      lng: number;
+      displayName: string;
+    };
+  };
 };
+
+export type ChatMode = "conversa" | "edicio";
 
 const TYPE_LABELS: Record<string, string> = {
   deep: "viatge llarg",
@@ -146,7 +161,10 @@ export type CopilotPlanContext = {
   }>;
 };
 
-export function buildCopilotSystemPrompt(ctx: CopilotPlanContext): string {
+export function buildCopilotSystemPrompt(
+  ctx: CopilotPlanContext,
+  mode: ChatMode = "edicio",
+): string {
   const placesList =
     ctx.places.length > 0
       ? ctx.places
@@ -262,8 +280,15 @@ Mai més de 4 paràgrafs en total.
 - Pla pare: \`[títol](/plans/slug-del-pare)\` sense ancora.
 - NO inventis slugs. NO posis cap enllaç forçat si no és rellevant.
 
-### 7. FUNCIONS (pots proposar canvis al plan)
-Tens 3 funcions disponibles per proposar modificacions:
+### 7. MODE ACTUAL: ${mode === "conversa" ? "CONVERSA" : "EDICIÓ"}
+
+${
+  mode === "conversa"
+    ? `Estàs en mode CONVERSA. NO pots fer canvis al plan — només respondre. Si l'usuari et demana afegir/crear coses, recorda-li amablement que ha de canviar a "Edició" a la barra superior del xat per fer-ho. Exemple:
+
+Usuari: "afegeix Cinema Verdi al mapa"
+Tu: "Per afegir-lo al mapa cal que canviïs a mode Edició a dalt del xat — des d'allà podràs confirmar la proposta. Si em dius una mica més de què és (ciutat, etc.) jo prepararé la cerca quan canviïs."`
+    : `Estàs en mode EDICIÓ. Tens 3 funcions disponibles per proposar modificacions:
 - \`add_place(name, search_query, why?)\` — afegir un lloc al mapa
 - \`add_checklist_item(text)\` — afegir un item a la checklist
 - \`add_subplan(title, plan_type, summary, destination?, start_date?, end_date?)\` — crear un sub-plan
@@ -280,11 +305,11 @@ Tens 3 funcions disponibles per proposar modificacions:
 - "Què em fa falta?" → text llistant items que falten
 - "Quins llocs valdrien la pena a Bangkok?" → recomanacions en text
 - "Com seria un sub-plan d'Itàlia?" → descripció en text
-- "Què passaria si..." → especulació en text
 
-Quan cridis una funció, escriu també un MISSATGE BREU confirmant la proposta ("D'acord, et proposo afegir-lo."). L'usuari haurà de confirmar abans que s'apliqui.
+Quan cridis una funció, escriu també un MISSATGE BREU confirmant la proposta ("D'acord, et proposo afegir-lo."). L'usuari haurà de confirmar abans que s'apliqui — el sistema mostrarà un preview amb les dades resoltes.
 
-Si l'usuari demana afegir múltiples coses en una sola ordre ("afegeix X, Y i Z"), pots cridar múltiples funcions a la mateixa resposta.
+Si l'usuari demana afegir múltiples coses en una sola ordre ("afegeix X, Y i Z"), pots cridar múltiples funcions a la mateixa resposta.`
+}
 
 ### 8. Quan no pots
 - Si l'usuari demana modificar coses fora d'aquestes 3 funcions (canviar el body, esborrar coses, editar dates), digues-li que això encara no està disponible i li recomanes anar a "Editar".

@@ -6,6 +6,7 @@ import { createSupabaseServer } from "./supabase-server";
 import {
   buildCopilotSystemPrompt,
   COPILOT_FUNCTION_DECLARATIONS,
+  type ChatMode,
   type Proposal,
   type ProposalStatus,
 } from "./chat-prompt";
@@ -76,6 +77,7 @@ export async function getChatMessages(planId: string): Promise<ChatMessage[]> {
 export async function sendChatMessage(
   planId: string,
   userContent: string,
+  mode: ChatMode = "edicio",
 ): Promise<ChatMessage> {
   const trimmed = userContent.trim();
   if (!trimmed) throw new Error("El missatge no pot estar buit.");
@@ -116,6 +118,7 @@ export async function sendChatMessage(
 
   const systemInstruction = buildCopilotSystemPrompt({
     title: plan.title,
+    // (passem `mode` com a segon argument més avall)
     type: plan.type,
     destination: plan.destination ?? undefined,
     startDate: plan.start_date ?? undefined,
@@ -151,7 +154,7 @@ export async function sendChatMessage(
       summary: c.summary as string,
       body: (c.body as string | null) ?? undefined,
     })),
-  });
+  }, mode);
 
   const recentMessages = (messagesRes.data ?? []).slice(-20);
   const history = recentMessages.map((m) => ({
@@ -171,10 +174,15 @@ export async function sendChatMessage(
       contents: history,
       config: {
         systemInstruction,
-        // 0.6 (de 0.4) per recuperar elaboració textual: amb tools
-        // disponibles, Gemini Flash tendeix a respostes massa lacòniques.
+        // 0.6 per recuperar elaboració textual quan hi ha tools; a mode
+        // conversa podríem baixar però mantenim per consistència.
         temperature: 0.6,
-        tools: [{ functionDeclarations: COPILOT_FUNCTION_DECLARATIONS }],
+        // Tools només en mode edició — així en mode conversa no hi ha risc
+        // que el model proposi canvis accidentals.
+        tools:
+          mode === "edicio"
+            ? [{ functionDeclarations: COPILOT_FUNCTION_DECLARATIONS }]
+            : undefined,
       },
     });
   } catch (e) {
@@ -207,6 +215,42 @@ export async function sendChatMessage(
       }
     }
   }
+
+  // Pre-geocoding d'add_place: el preview ha de mostrar la ubicació resolta
+  // abans de demanar confirmació. Si Nominatim no troba res, ja marquem la
+  // proposta com a failed perquè l'usuari pugui afinar la query sense haver
+  // de clicar Aplicar i veure-ho fallar.
+  await Promise.all(
+    proposals.map(async (p) => {
+      if (p.function_name !== "add_place") return;
+      const query =
+        typeof p.arguments.search_query === "string"
+          ? p.arguments.search_query
+          : "";
+      if (!query) return;
+      try {
+        const results = await geocodeSearch(query);
+        const first = results[0];
+        if (first) {
+          p.preview = {
+            geocoded: {
+              name: first.name,
+              country: first.country,
+              lat: first.lat,
+              lng: first.lng,
+              displayName: first.displayName,
+            },
+          };
+        } else {
+          p.status = "failed";
+          p.result_message = `OpenStreetMap no ha trobat "${query}". Prova amb més detall (ciutat, país).`;
+        }
+      } catch (e) {
+        p.status = "failed";
+        p.result_message = `Error a Nominatim: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }),
+  );
 
   // Si no hi ha res (ni text ni funció), és un error.
   if (!replyText.trim() && proposals.length === 0) {
@@ -256,8 +300,9 @@ type ExecuteResult = {
 
 async function executeAddPlace(
   planId: string,
-  args: Record<string, unknown>,
+  proposal: Proposal,
 ): Promise<ExecuteResult> {
+  const args = proposal.arguments;
   const name = typeof args.name === "string" ? args.name.trim() : "";
   const query = typeof args.search_query === "string" ? args.search_query.trim() : "";
   const why = typeof args.why === "string" ? args.why.trim() : undefined;
@@ -265,29 +310,35 @@ async function executeAddPlace(
     return { success: false, message: "Manquen arguments (name + search_query)." };
   }
 
-  let geocode;
-  try {
-    geocode = await geocodeSearch(query);
-  } catch (e) {
-    return {
-      success: false,
-      message: `Error a Nominatim: ${e instanceof Error ? e.message : String(e)}`,
-    };
-  }
-  const first = geocode[0];
-  if (!first) {
-    return {
-      success: false,
-      message: `Pexels/OpenStreetMap no ha trobat coordenades per "${query}".`,
-    };
+  // Si tenim preview pre-geocodificat (cas habitual), evitem una segona crida
+  // a Nominatim. Si no, fem el geocoding ara.
+  let resolved = proposal.preview?.geocoded;
+  if (!resolved) {
+    let geocode;
+    try {
+      geocode = await geocodeSearch(query);
+    } catch (e) {
+      return {
+        success: false,
+        message: `Error a Nominatim: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+    const first = geocode[0];
+    if (!first) {
+      return {
+        success: false,
+        message: `OpenStreetMap no ha trobat coordenades per "${query}".`,
+      };
+    }
+    resolved = first;
   }
 
   try {
     await addPlace(planId, {
       name,
-      country: first.country,
-      lat: first.lat,
-      lng: first.lng,
+      country: resolved.country,
+      lat: resolved.lat,
+      lng: resolved.lng,
       notes: why,
     });
   } catch (e) {
@@ -298,7 +349,7 @@ async function executeAddPlace(
   }
   return {
     success: true,
-    message: `Afegit "${name}"${first.country ? ` (${first.country})` : ""} al mapa.`,
+    message: `Afegit "${name}"${resolved.country ? ` (${resolved.country})` : ""} al mapa.`,
   };
 }
 
@@ -425,7 +476,7 @@ async function executeProposal(
 ): Promise<ExecuteResult> {
   switch (proposal.function_name) {
     case "add_place":
-      return executeAddPlace(planId, proposal.arguments);
+      return executeAddPlace(planId, proposal);
     case "add_checklist_item":
       return executeAddChecklistItem(planId, proposal.arguments);
     case "add_subplan":

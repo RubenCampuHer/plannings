@@ -26,6 +26,7 @@ import WebSocket from "ws";
 import {
   buildCopilotSystemPrompt,
   COPILOT_FUNCTION_DECLARATIONS,
+  type ChatMode,
 } from "../../lib/chat-prompt";
 import { CASES, type EvalCase } from "./cases";
 import { judgeResponse, type JudgeResult } from "./judge";
@@ -185,6 +186,7 @@ type CopilotReply = {
 async function askCopilot(
   systemPrompt: string,
   question: string,
+  mode: ChatMode,
 ): Promise<CopilotReply> {
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
@@ -193,7 +195,11 @@ async function askCopilot(
       systemInstruction: systemPrompt,
       // Mantenim 0.6 alineat amb chat-actions.ts.
       temperature: 0.6,
-      tools: [{ functionDeclarations: COPILOT_FUNCTION_DECLARATIONS }],
+      // Tools només a mode edició — mateix flow que el server action.
+      tools:
+        mode === "edicio"
+          ? [{ functionDeclarations: COPILOT_FUNCTION_DECLARATIONS }]
+          : undefined,
     },
   });
 
@@ -313,18 +319,17 @@ async function main() {
   console.log(`   Body: ${plan.body.length} chars · ${CASES.length} casos\n`);
 
   const ctx = await loadContext(plan);
-  const systemPrompt = buildCopilotSystemPrompt(ctx);
 
   const runs: CaseRun[] = [];
   for (const c of CASES) {
-    process.stdout.write(`  · ${c.id} … `);
+    process.stdout.write(`  · [${c.mode}] ${c.id} … `);
     try {
-      const reply = await askCopilot(systemPrompt, c.question);
+      // Build prompt per cas perquè canvia segons mode.
+      const systemPrompt = buildCopilotSystemPrompt(ctx, c.mode);
+      const reply = await askCopilot(systemPrompt, c.question, c.mode);
       if (!reply.text.trim() && reply.functionCalls.length === 0) {
         throw new Error("resposta buida del copilot");
       }
-      // El judge veu el text + una descripció textual de les function calls
-      // perquè pugui valorar si el model va decidir bé cridar-les o no.
       const fcText =
         reply.functionCalls.length > 0
           ? `\n\n[function calls: ${reply.functionCalls

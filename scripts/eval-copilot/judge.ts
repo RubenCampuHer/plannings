@@ -94,7 +94,11 @@ export async function judgeResponse(args: {
   response: string;
   evalCase: EvalCase;
 }): Promise<JudgeResult> {
-  const userMessage = `### CONTEXT DEL COPILOT (el seu system prompt)
+  const userMessage = `### MODE D'AQUEST CAS
+
+${args.evalCase.mode === "conversa" ? "CONVERSA (només Q&A, el copilot NO té tools disponibles — no pot cridar funcions encara que volgués)" : "EDICIÓ (el copilot té tools disponibles per a add_place, add_checklist_item, add_subplan)"}
+
+### CONTEXT DEL COPILOT (el seu system prompt)
 
 \`\`\`
 ${args.systemPrompt}
@@ -116,7 +120,7 @@ ${args.evalCase.focus.join(", ")}
 
 ${args.evalCase.ideal_behavior}
 
-Avalua segons la rúbrica.`;
+Avalua segons la rúbrica. Tingues en compte el MODE: a mode CONVERSA no pot cridar funcions; si l'usuari demana un canvi, hauria de redirigir-lo a Edició.`;
 
   const response = await args.client.models.generateContent({
     model: "gemini-2.5-pro",
