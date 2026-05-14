@@ -500,33 +500,105 @@ function extFromContentType(mime: string): string {
 }
 
 export type ImagePolishResult = {
+  /** Body amb les imatges Markdown inserides. El client l'injecta al textarea. */
+  newBody: string;
   added: number;
   failed: string[];
-  bodyUpdated: boolean;
+  flagAdded: boolean;
 };
 
+type AppliedImage = {
+  path: string;
+  alt: string;
+  placement: string;
+  mime: string;
+};
+
+async function uploadPexelsToBucket(
+  supabase: Awaited<ReturnType<typeof createSupabaseServer>>,
+  planId: string,
+  imageUrl: string,
+): Promise<{ path: string; mime: string }> {
+  const { buffer, contentType } = await downloadPexelsImage(imageUrl);
+  const ext = extFromContentType(contentType);
+  const path = `${planId}/polish-${crypto.randomUUID()}.${ext}`;
+  const { error: upErr } = await supabase.storage
+    .from("plan-photos")
+    .upload(path, buffer, { contentType, upsert: false });
+  if (upErr) throw new Error(`Pujar imatge: ${upErr.message}`);
+  return { path, mime: contentType };
+}
+
 /**
- * Una sola crida que: pregunta a Gemini quines imatges encaixen, busca cadascuna
- * a Pexels, descarrega + puja al bucket, insereix-les inline al body i les
- * afegeix a la taula `plan_photos`. La quantitat depèn de la durada del viatge.
+ * Best-effort: si la destinació sembla un país, intenta afegir una bandera
+ * com a primera imatge. Si Pexels no troba res o falla la pujada, no és error
+ * — simplement seguim sense bandera.
+ */
+async function tryFlagImage(
+  supabase: Awaited<ReturnType<typeof createSupabaseServer>>,
+  planId: string,
+  destination: string,
+): Promise<AppliedImage | null> {
+  // Heurística: si la destinació té coma, l'última peça sol ser el país
+  // ("Tokyo, Japan" → "Japan"). Sense coma, fem servir tota la cadena.
+  const country = (destination.split(",").pop() ?? destination).trim();
+  if (!country) return null;
+  const query = `${country} flag waving`;
+
+  try {
+    const photo = await searchPexelsTop(query);
+    if (!photo) return null;
+    const { path, mime } = await uploadPexelsToBucket(supabase, planId, photo.largeUrl);
+    return {
+      path,
+      alt: `Bandera de ${country}`,
+      placement: "intro",
+      mime,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Polish d'imatges: pregunta a Gemini quines fotos encaixen amb el plan,
+ * intenta sempre incloure una bandera de la destinació, busca cadascuna a
+ * Pexels, descarrega + puja al bucket, les insereix inline a `currentBody` i
+ * crea files a `plan_photos` per a l'Àlbum.
+ *
+ * IMPORTANT: NO actualitza `plans.body` a la BBDD — torna el `newBody` i el
+ * client l'injecta al textarea del form. Així no es trepitja el que l'usuari
+ * tingui sense desar i segueix el mateix patró que el polish de text.
  */
 export async function polishImagesWithAi(
   planId: string,
+  currentBody: string,
 ): Promise<ImagePolishResult> {
+  if (!currentBody.trim()) {
+    throw new Error("Necessites una mica de cos per a polish d'imatges.");
+  }
+
   const supabase = await createSupabaseServer();
 
   const { data: plan, error: planError } = await supabase
     .from("plans")
-    .select("id,title,type,destination,start_date,end_date,summary,body")
+    .select("id,title,type,destination,start_date,end_date,summary")
     .eq("id", planId)
     .single();
   if (planError || !plan) throw new Error("Plan no trobat");
 
   const planType = plan.type as PlanType;
-  const durationDays = calcDurationDays(plan.start_date ?? undefined, plan.end_date ?? undefined);
+  const durationDays = calcDurationDays(
+    plan.start_date ?? undefined,
+    plan.end_date ?? undefined,
+  );
   const counts = targetImageCount(durationDays, planType);
-  const headings = extractH2Titles(plan.body);
-  const typeLabel = { deep: "viatge llarg", weekend: "cap de setmana", day: "dia" }[planType];
+  // Headings extreuen-se de `currentBody`, no del DB, perquè el textarea pot
+  // tenir canvis no desats.
+  const headings = extractH2Titles(currentBody);
+  const typeLabel = { deep: "viatge llarg", weekend: "cap de setmana", day: "dia" }[
+    planType
+  ];
 
   const headingsList =
     headings.length > 0
@@ -543,32 +615,43 @@ Resum: ${plan.summary}
 
 Cos:
 \`\`\`markdown
-${plan.body}
+${currentBody}
 \`\`\`
 
 Headings ## existents al body (usables com a placement):
 ${headingsList}
 
-Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el plan. Reparteix-les entre seccions diferents. Search queries en anglès, alt_text en català, placement = 'intro' | 'outro' | text exacte d'una heading.`;
+Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el plan. Reparteix-les entre seccions diferents. Search queries en anglès, alt_text en català, placement = 'intro' | 'outro' | text exacte d'una heading. NO suggereixis banderes — d'això se n'encarrega el sistema apart.`;
 
-  const client = getClient();
-  let response;
-  try {
-    response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: userMessage }] }],
-      config: {
-        systemInstruction: IMAGE_SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: IMAGE_RESPONSE_SCHEMA,
-        temperature: 0.7,
-      },
-    });
-  } catch (e) {
-    throw translateGeminiError(e);
-  }
+  // Bandera i Gemini en paral·lel per estalviar segons.
+  const [flagResult, geminiResult] = await Promise.allSettled([
+    plan.destination
+      ? tryFlagImage(supabase, planId, plan.destination)
+      : Promise.resolve(null),
+    (async () => {
+      const client = getClient();
+      try {
+        return await client.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [{ role: "user", parts: [{ text: userMessage }] }],
+          config: {
+            systemInstruction: IMAGE_SYSTEM_INSTRUCTION,
+            responseMimeType: "application/json",
+            responseSchema: IMAGE_RESPONSE_SCHEMA,
+            temperature: 0.7,
+          },
+        });
+      } catch (e) {
+        throw translateGeminiError(e);
+      }
+    })(),
+  ]);
 
-  const text = response.text;
+  if (geminiResult.status === "rejected") throw geminiResult.reason;
+  const flagApplied =
+    flagResult.status === "fulfilled" ? flagResult.value : null;
+
+  const text = geminiResult.value.text;
   if (!text) throw new Error("La IA no ha tornat cap suggeriment.");
 
   let parsed: {
@@ -581,60 +664,51 @@ Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el 
   }
 
   const suggestions = (parsed.images ?? []).slice(0, counts.max);
-  if (suggestions.length === 0) {
-    throw new Error("La IA no ha suggerit cap imatge. Prova-ho de nou.");
-  }
 
-  // Per a cada suggeriment: cerca a Pexels, descarrega, puja al bucket.
-  // Es fan en paral·lel — Pexels admet ràfegues curtes per a la free tier.
-  type Applied = { path: string; alt: string; placement: string; mime: string };
+  // Pexels + upload en paral·lel per a totes les suggestions.
   const failed: string[] = [];
   const settled = await Promise.allSettled(
-    suggestions.map(async (s): Promise<Applied | null> => {
+    suggestions.map(async (s): Promise<AppliedImage | null> => {
       const photo = await searchPexelsTop(s.search_query);
       if (!photo) return null;
-      const { buffer, contentType } = await downloadPexelsImage(photo.largeUrl);
-      const ext = extFromContentType(contentType);
-      const uuid = crypto.randomUUID();
-      const path = `${planId}/polish-${uuid}.${ext}`;
-
-      const { error: upErr } = await supabase.storage
-        .from("plan-photos")
-        .upload(path, buffer, { contentType, upsert: false });
-      if (upErr) throw new Error(`Pujar imatge: ${upErr.message}`);
-
-      return { path, alt: s.alt_text, placement: s.placement, mime: contentType };
+      const { path, mime } = await uploadPexelsToBucket(supabase, planId, photo.largeUrl);
+      return { path, alt: s.alt_text, placement: s.placement, mime };
     }),
   );
 
-  const applied: Applied[] = [];
+  const geminiApplied: AppliedImage[] = [];
   for (let i = 0; i < settled.length; i++) {
     const r = settled[i];
     if (r.status === "fulfilled" && r.value) {
-      applied.push(r.value);
+      geminiApplied.push(r.value);
     } else {
       failed.push(suggestions[i].search_query);
+      if (r.status === "rejected") {
+        console.error(`Pexels suggestion "${suggestions[i].search_query}" failed:`, r.reason);
+      }
     }
   }
 
-  if (applied.length === 0) {
-    return { added: 0, failed, bodyUpdated: false };
+  // Bandera primer (placement='intro'), després la resta.
+  const allApplied: AppliedImage[] = [];
+  if (flagApplied) allApplied.push(flagApplied);
+  allApplied.push(...geminiApplied);
+
+  if (allApplied.length === 0) {
+    return {
+      newBody: currentBody,
+      added: 0,
+      failed,
+      flagAdded: false,
+    };
   }
 
-  // Inserim al body i actualitzem la row del plan.
-  const newBody = insertInlineImages(plan.body, applied);
-  const { error: bodyErr } = await supabase
-    .from("plans")
-    .update({ body: newBody, updated_at: new Date().toISOString() })
-    .eq("id", planId);
-  if (bodyErr) {
-    // Si el body falla, intentem ser conservadors: les imatges ja són al bucket
-    // i les volem mostrar igualment a l'àlbum (sota); no rollback de la pujada.
-    throw new Error(`Actualitzar body: ${bodyErr.message}`);
-  }
+  // Insereix `pp:` markdown al body actual (no toquem la BBDD).
+  const newBody = insertInlineImages(currentBody, allApplied);
 
-  // Files a plan_photos perquè les imatges també surtin a l'Àlbum.
-  const photoRows = applied.map((a) => ({
+  // Album: les files de plan_photos sí que es desen ara — així queden visibles
+  // a l'Àlbum encara que l'usuari decideixi no desar els canvis del body.
+  const photoRows = allApplied.map((a) => ({
     id: crypto.randomUUID(),
     plan_id: planId,
     storage_path: a.path,
@@ -643,18 +717,17 @@ Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el 
   }));
   const { error: photosErr } = await supabase.from("plan_photos").insert(photoRows);
   if (photosErr) {
-    // No és crític si falla — les imatges segueixen visibles inline al body.
-    // El log queda al server, l'usuari veu el body actualitzat.
     console.error(`plan_photos insert: ${photosErr.message}`);
   }
 
+  // Revalida per refrescar l'Àlbum al detall.
   revalidatePath(`/plans/${planId}`);
-  revalidatePath(`/plans/${planId}/edit`);
 
   return {
-    added: applied.length,
+    newBody,
+    added: allApplied.length,
     failed,
-    bodyUpdated: true,
+    flagAdded: flagApplied !== null,
   };
 }
 

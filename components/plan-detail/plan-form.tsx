@@ -8,6 +8,7 @@ import { CoverEditor } from "@/components/plan-detail/cover-editor";
 import { DayPlanTemplates } from "@/components/plan-detail/day-plan-templates";
 import type { DayPlanParts } from "@/components/plan-detail/day-plan-templates";
 import { InlineImageInserter } from "@/components/plan-detail/inline-image-inserter";
+import { PolishImagesButton } from "@/components/plan-detail/polish-images-button";
 import { PolishWithAi } from "@/components/plan-detail/polish-with-ai";
 import { createPlan, updatePlan } from "@/lib/plan-actions";
 import type { PlanDraft, SuggestedPlace } from "@/lib/ai-actions";
@@ -291,7 +292,12 @@ export function PlanForm({
       <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-3 flex-wrap">
           <label htmlFor="body" className={LABEL}>Cos del plan (Markdown)</label>
-          {isEdit && plan && <InlineImageInserter planId={plan.id} />}
+          {isEdit && plan && (
+            <div className="flex items-center gap-4 flex-wrap">
+              <PolishImagesButton planId={plan.id} />
+              <InlineImageInserter planId={plan.id} />
+            </div>
+          )}
         </div>
         <textarea
           ref={bodyRef}

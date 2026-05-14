@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InlineImageInserter } from "@/components/plan-detail/inline-image-inserter";
+import { PolishImagesButton } from "@/components/plan-detail/polish-images-button";
 import { updatePlanBody } from "@/lib/plan-actions";
 
 export function EditableBody({
@@ -70,7 +71,10 @@ export function EditableBody({
         <span className="text-sm font-medium text-ink-soft">
           Editant el cos (Markdown)
         </span>
-        <InlineImageInserter planId={planId} textareaId={textareaId} />
+        <div className="flex items-center gap-4 flex-wrap">
+          <PolishImagesButton planId={planId} textareaId={textareaId} />
+          <InlineImageInserter planId={planId} textareaId={textareaId} />
+        </div>
       </div>
       <textarea
         ref={textareaRef}
