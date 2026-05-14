@@ -50,7 +50,7 @@ export default async function EditPlanPage({
       <PlanForm plan={plan} />
 
       <div className="mt-16">
-        <PolishWithAi planId={plan.id} />
+        <PolishWithAi mode="edit" planId={plan.id} />
       </div>
 
       <div className="mt-12 pt-10 border-t border-ink-faint/30">

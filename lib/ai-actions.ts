@@ -4,6 +4,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServer } from "./supabase-server";
 import { geocodeSearch } from "./place-actions";
+import type { PlanType } from "./types";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY;
 
@@ -62,6 +63,16 @@ export type PolishSuggestions = {
   enrichedBody: string;
   suggestedPlaces: SuggestedPlace[];
   suggestedChecklist: SuggestedChecklistItem[];
+};
+
+export type PlanDraft = {
+  title: string;
+  type: PlanType;
+  destination?: string;
+  startDate?: string;
+  endDate?: string;
+  summary: string;
+  body: string;
 };
 
 // Esquema JSON estructurat que el model haurà de complir.
@@ -123,35 +134,7 @@ const RESPONSE_SCHEMA = {
   required: ["enriched_body", "suggested_places", "suggested_checklist"],
 };
 
-export async function polishWithAi(planId: string): Promise<PolishSuggestions> {
-  const supabase = await createSupabaseServer();
-
-  const { data: plan, error: planError } = await supabase
-    .from("plans")
-    .select("id,title,type,destination,summary,body")
-    .eq("id", planId)
-    .single();
-  if (planError || !plan) throw new Error("Plan no trobat");
-
-  const [{ data: places }, { data: checklist }] = await Promise.all([
-    supabase.from("places").select("name,country").eq("plan_id", planId),
-    supabase.from("checklist_items").select("text").eq("plan_id", planId),
-  ]);
-
-  const placesList =
-    places && places.length > 0
-      ? places.map((p) => `- ${p.name}${p.country ? ` (${p.country})` : ""}`).join("\n")
-      : "(cap)";
-  const checklistList =
-    checklist && checklist.length > 0
-      ? checklist.map((c) => `- ${c.text}`).join("\n")
-      : "(cap)";
-
-  const typeLabel = { deep: "viatge llarg", weekend: "cap de setmana", day: "dia" }[
-    plan.type as "deep" | "weekend" | "day"
-  ];
-
-  const systemInstruction = `Ets un assistent que ajuda a enriquir plans de viatges i escapades per a una agenda íntima en català.
+const SYSTEM_INSTRUCTION = `Ets un assistent que ajuda a enriquir plans de viatges i escapades per a una agenda íntima en català.
 
 Regles:
 - Manté el to càlid i personal — escriu com si fossis l'usuari mateix prenent notes. Primera persona del plural ("anem", "fem", "tenim"), gens corporatiu.
@@ -159,29 +142,115 @@ Regles:
 - Per als places, dona search queries que OpenStreetMap (Nominatim) pugui resoldre — inclou ciutat o regió.
 - Respon SEMPRE seguint l'esquema JSON proporcionat. No afegeixis text fora del JSON.`;
 
-  const userMessage = `Plan a millorar:
+/**
+ * Durada del viatge en dies (inclusiu: si start=end llavors 1).
+ * Retorna null si no hi ha prou info o si end < start.
+ */
+function calcDurationDays(start?: string, end?: string): number | null {
+  if (!start) return null;
+  const effectiveEnd = end || start;
+  const startMs = new Date(start).getTime();
+  const endMs = new Date(effectiveEnd).getTime();
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return null;
+  if (endMs < startMs) return null;
+  return Math.round((endMs - startMs) / 86400000) + 1;
+}
 
-Tipus: ${typeLabel ?? plan.type}
-Títol: ${plan.title}
-Destinació: ${plan.destination ?? "(sense definir)"}
-Resum: ${plan.summary}
+/**
+ * Heurística: més dies → més places/checklist proposats.
+ * Mantenim ranges petits perquè l'usuari no quedi soterrat de suggeriments.
+ */
+function targetRanges(
+  durationDays: number | null,
+  type: PlanType,
+): { places: [number, number]; checklist: [number, number] } {
+  // Per a plans `day` o sense dates: range curt.
+  if (type === "day" || durationDays == null || durationDays <= 1) {
+    return { places: [3, 6], checklist: [2, 4] };
+  }
+  if (durationDays <= 4) return { places: [6, 10], checklist: [4, 6] };
+  if (durationDays <= 10) return { places: [10, 15], checklist: [5, 8] };
+  if (durationDays <= 20) return { places: [15, 22], checklist: [6, 10] };
+  return { places: [22, 30], checklist: [8, 12] };
+}
+
+function durationLabel(days: number | null): string {
+  if (days == null) return "(sense dates definides)";
+  if (days === 1) return "1 dia";
+  if (days < 7) return `${days} dies`;
+  if (days < 14) {
+    const weeks = Math.round(days / 7);
+    return `${days} dies (~${weeks} ${weeks === 1 ? "setmana" : "setmanes"})`;
+  }
+  if (days < 60) {
+    const weeks = Math.round(days / 7);
+    return `${days} dies (~${weeks} setmanes)`;
+  }
+  const months = Math.round(days / 30);
+  return `${days} dies (~${months} mesos)`;
+}
+
+function buildUserMessage(
+  draft: PlanDraft,
+  existingPlaces: string,
+  existingChecklist: string,
+): string {
+  const typeLabel = { deep: "viatge llarg", weekend: "cap de setmana", day: "dia" }[
+    draft.type
+  ];
+  const durationDays = calcDurationDays(draft.startDate, draft.endDate);
+  const ranges = targetRanges(durationDays, draft.type);
+  const durLabel = durationLabel(durationDays);
+
+  // La instrucció de durada s'inclou tant si hi ha dates com si no.
+  // Si no n'hi ha, l'AI fa servir el rang curt per defecte.
+  const durationLine =
+    durationDays != null
+      ? `Durada: ${durLabel} → això vol dir un viatge ${
+          durationDays <= 1
+            ? "d'un dia"
+            : durationDays <= 4
+            ? "curt"
+            : durationDays <= 10
+            ? "d'una setmana o així"
+            : durationDays <= 20
+            ? "de dues-tres setmanes"
+            : "llarg, de més d'un mes"
+        }.`
+      : `Durada: sense dates → treballa amb un viatge d'abast curt.`;
+
+  return `Plan a millorar:
+
+Tipus: ${typeLabel}
+Títol: ${draft.title}
+Destinació: ${draft.destination ?? "(sense definir)"}
+${durationLine}
+Resum: ${draft.summary}
 
 Cos actual:
 \`\`\`markdown
-${plan.body}
+${draft.body}
 \`\`\`
 
 Llocs ja afegits al mapa (NO suggerir aquests):
-${placesList}
+${existingPlaces}
 
 Items de checklist ja existents (NO suggerir aquests):
-${checklistList}
+${existingChecklist}
 
 Tasques:
-1. Enriqueix el cos amb formato ric (## i ###, **negretes** a noms propis, *cursives* a matisos, > blockquotes ocasionals, llistes amb -). Afegeix detalls realistes i petits consells. Manté la veu de l'usuari. Preserva qualsevol \`![](pp:...)\` exactament igual.
-2. Suggereix 8-15 llocs concrets per visitar/fer relacionats amb el plan. Cada lloc ha de tenir un search_query precís (inclou ciutat i país).
-3. Suggereix 3-6 items de checklist que l'usuari potser ha oblidat (reserves, equipatge, vacunes, entrades, etc).`;
+1. Enriqueix el cos amb format ric (## i ###, **negretes** a noms propis, *cursives* a matisos, > blockquotes ocasionals, llistes amb -). Afegeix detalls realistes i petits consells. ${
+    durationDays != null && durationDays > 4
+      ? "Aprofita la durada per estructurar el cos en seccions (per dies, per regions, per fases del viatge) — donа-li profunditat."
+      : durationDays != null && durationDays <= 1
+      ? "Manté el cos compacte i centrat — és un sol dia."
+      : "Manté el cos focalitzat i pràctic."
+  } Manté la veu de l'usuari. Preserva qualsevol \`![](pp:...)\` exactament igual.
+2. Suggereix entre ${ranges.places[0]} i ${ranges.places[1]} llocs concrets per visitar/fer relacionats amb el plan, proporcional a la durada. Cada lloc ha de tenir un search_query precís (inclou ciutat i país).
+3. Suggereix entre ${ranges.checklist[0]} i ${ranges.checklist[1]} items de checklist que l'usuari potser ha oblidat (reserves, equipatge, vacunes, entrades, etc).`;
+}
 
+async function callGemini(userMessage: string): Promise<PolishSuggestions> {
   const client = getClient();
   let response;
   try {
@@ -189,7 +258,7 @@ Tasques:
       model: "gemini-2.5-flash",
       contents: [{ role: "user", parts: [{ text: userMessage }] }],
       config: {
-        systemInstruction,
+        systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA,
         temperature: 0.6,
@@ -224,6 +293,60 @@ Tasques:
     })),
     suggestedChecklist: (parsed.suggested_checklist ?? []).map((c) => ({ text: c.text })),
   };
+}
+
+export async function polishWithAi(planId: string): Promise<PolishSuggestions> {
+  const supabase = await createSupabaseServer();
+
+  const { data: plan, error: planError } = await supabase
+    .from("plans")
+    .select("id,title,type,destination,start_date,end_date,summary,body")
+    .eq("id", planId)
+    .single();
+  if (planError || !plan) throw new Error("Plan no trobat");
+
+  const [{ data: places }, { data: checklist }] = await Promise.all([
+    supabase.from("places").select("name,country").eq("plan_id", planId),
+    supabase.from("checklist_items").select("text").eq("plan_id", planId),
+  ]);
+
+  const placesList =
+    places && places.length > 0
+      ? places.map((p) => `- ${p.name}${p.country ? ` (${p.country})` : ""}`).join("\n")
+      : "(cap)";
+  const checklistList =
+    checklist && checklist.length > 0
+      ? checklist.map((c) => `- ${c.text}`).join("\n")
+      : "(cap)";
+
+  const draft: PlanDraft = {
+    title: plan.title,
+    type: plan.type as PlanType,
+    destination: plan.destination ?? undefined,
+    startDate: plan.start_date ?? undefined,
+    endDate: plan.end_date ?? undefined,
+    summary: plan.summary,
+    body: plan.body,
+  };
+
+  const userMessage = buildUserMessage(draft, placesList, checklistList);
+  return callGemini(userMessage);
+}
+
+/**
+ * Variant per al mode `new`: encara no hi ha plan a la BBDD, llegim els camps
+ * del form en construcció. Mateix prompt que `polishWithAi`, sense places/
+ * checklist preexistents.
+ */
+export async function polishWithAiFromDraft(
+  draft: PlanDraft,
+): Promise<PolishSuggestions> {
+  if (!draft.title.trim()) throw new Error("Necessites un títol per a polish.");
+  if (!draft.summary.trim()) throw new Error("Necessites un resum per a polish.");
+  if (!draft.body.trim()) throw new Error("Necessites una mica de cos per a polish.");
+
+  const userMessage = buildUserMessage(draft, "(cap)", "(cap)");
+  return callGemini(userMessage);
 }
 
 export async function addAiChecklistItems(

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { applyAiPlaceSuggestions, type SuggestedPlace } from "./ai-actions";
 import { createSupabaseServer } from "./supabase-server";
 import type { PlanStatus, PlanType } from "./types";
 
@@ -190,8 +191,46 @@ export async function updatePlan(id: string, formData: FormData): Promise<void> 
   redirect(target);
 }
 
+/**
+ * Parsejat tolerant del JSON dels pending del Polish IA. Si el camp ve buit,
+ * mal format, o és array de tipus incorrecte, retornem buit i seguim — no és
+ * crític que els suggeriments arribin: el plan s'ha de crear igualment.
+ */
+function parsePendingPlaces(raw: FormDataEntryValue | null): SuggestedPlace[] {
+  if (typeof raw !== "string" || raw === "" || raw === "[]") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (p): p is SuggestedPlace =>
+          typeof p === "object" &&
+          p !== null &&
+          typeof (p as { name?: unknown }).name === "string" &&
+          typeof (p as { searchQuery?: unknown }).searchQuery === "string",
+      )
+      .map((p) => ({ name: p.name, searchQuery: p.searchQuery, why: p.why }));
+  } catch {
+    return [];
+  }
+}
+
+function parsePendingChecklist(raw: FormDataEntryValue | null): string[] {
+  if (typeof raw !== "string" || raw === "" || raw === "[]") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((t): t is string => typeof t === "string" && t.trim() !== "");
+  } catch {
+    return [];
+  }
+}
+
 export async function createPlan(formData: FormData): Promise<void> {
   const fields = readPlanForm(formData);
+  const pendingPlaces = parsePendingPlaces(formData.get("pendingPlacesJson"));
+  const pendingChecklist = parsePendingChecklist(formData.get("pendingChecklistJson"));
+
   const base = slugify(fields.title);
   const id = await uniqueSlug(base);
   const now = new Date().toISOString();
@@ -204,6 +243,27 @@ export async function createPlan(formData: FormData): Promise<void> {
     updated_at: now,
   });
   if (error) throw new Error(`Crear plan: ${error.message}`);
+
+  // Checklist primer (instantani). Si falla no anul·lem el create — el plan
+  // ja existeix i l'usuari pot afegir els items a mà.
+  if (pendingChecklist.length > 0) {
+    const rows = pendingChecklist.map((text) => ({
+      id: crypto.randomUUID(),
+      plan_id: id,
+      text,
+      done: false,
+    }));
+    await supabase.from("checklist_items").insert(rows);
+  }
+
+  // Places: geocode + insert (lent — ~1.1s per lloc).
+  if (pendingPlaces.length > 0) {
+    try {
+      await applyAiPlaceSuggestions(id, pendingPlaces);
+    } catch {
+      // Errors de geocoding no haurien d'evitar el redirect al plan creat.
+    }
+  }
 
   revalidatePath("/");
   revalidatePath("/archive");

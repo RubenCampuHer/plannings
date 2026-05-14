@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { ListTodo, MapPin, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CoverEditor } from "@/components/plan-detail/cover-editor";
 import { DayPlanTemplates } from "@/components/plan-detail/day-plan-templates";
 import type { DayPlanParts } from "@/components/plan-detail/day-plan-templates";
 import { InlineImageInserter } from "@/components/plan-detail/inline-image-inserter";
+import { PolishWithAi } from "@/components/plan-detail/polish-with-ai";
 import { createPlan, updatePlan } from "@/lib/plan-actions";
+import type { PlanDraft, SuggestedPlace } from "@/lib/ai-actions";
 import type { Plan, PlanStatus, PlanType } from "@/lib/types";
 
 const TYPE_OPTIONS: { value: PlanType; label: string }[] = [
@@ -52,10 +55,20 @@ export function PlanForm({
   const [cover, setCover] = useState<string>(plan?.cover ?? COVER_PRESETS[0]);
   const [type, setType] = useState<PlanType>(plan?.type ?? "weekend");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Suggeriments acceptats per la IA al mode `new` que quedaran pendents fins
+  // que l'usuari cliqui "Crear plan". Cada `apply` del Polish s'afegeix als
+  // arrays existents (no els reemplaça).
+  const [pendingPlaces, setPendingPlaces] = useState<SuggestedPlace[]>([]);
+  const [pendingChecklist, setPendingChecklist] = useState<string[]>([]);
 
   const titleRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const destinationRef = useRef<HTMLInputElement>(null);
+  const startDateRef = useRef<HTMLInputElement>(null);
+  const endDateRef = useRef<HTMLInputElement>(null);
 
   function applyDayTemplate(parts: DayPlanParts) {
     if (titleRef.current && titleRef.current.value.trim() === "") {
@@ -69,8 +82,39 @@ export function PlanForm({
     }
   }
 
+  // Build the draft snapshot from current form values for Polish IA (mode `new`).
+  function getDraft(): PlanDraft {
+    return {
+      title: titleRef.current?.value.trim() ?? "",
+      type,
+      destination: destinationRef.current?.value.trim() || undefined,
+      startDate: startDateRef.current?.value || undefined,
+      endDate: endDateRef.current?.value || undefined,
+      summary: summaryRef.current?.value.trim() ?? "",
+      body: bodyRef.current?.value.trim() ?? "",
+    };
+  }
+
+  function onPolishAccepted({
+    places,
+    checklistTexts,
+  }: {
+    places: SuggestedPlace[];
+    checklistTexts: string[];
+  }) {
+    if (places.length > 0) setPendingPlaces((prev) => [...prev, ...places]);
+    if (checklistTexts.length > 0)
+      setPendingChecklist((prev) => [...prev, ...checklistTexts]);
+  }
+
+  function clearPending() {
+    setPendingPlaces([]);
+    setPendingChecklist([]);
+  }
+
   async function action(formData: FormData) {
     setError(null);
+    setSubmitting(true);
     try {
       if (isEdit && plan) {
         await updatePlan(plan.id, formData);
@@ -83,8 +127,12 @@ export function PlanForm({
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("NEXT_REDIRECT")) throw e;
       setError(msg);
+    } finally {
+      setSubmitting(false);
     }
   }
+
+  const hasPending = pendingPlaces.length > 0 || pendingChecklist.length > 0;
 
   return (
     <form action={action} className="space-y-8 max-w-3xl">
@@ -145,6 +193,7 @@ export function PlanForm({
       <div className="space-y-2">
         <label htmlFor="destination" className={LABEL}>Destinació</label>
         <input
+          ref={destinationRef}
           id="destination"
           name="destination"
           type="text"
@@ -158,6 +207,7 @@ export function PlanForm({
         <div className="space-y-2">
           <label htmlFor="startDate" className={LABEL}>Data</label>
           <input
+            ref={startDateRef}
             id="startDate"
             name="startDate"
             type="date"
@@ -170,6 +220,7 @@ export function PlanForm({
           <div className="space-y-2">
             <label htmlFor="startDate" className={LABEL}>Data inici</label>
             <input
+              ref={startDateRef}
               id="startDate"
               name="startDate"
               type="date"
@@ -180,6 +231,7 @@ export function PlanForm({
           <div className="space-y-2">
             <label htmlFor="endDate" className={LABEL}>Data fi</label>
             <input
+              ref={endDateRef}
               id="endDate"
               name="endDate"
               type="date"
@@ -253,6 +305,70 @@ export function PlanForm({
         />
       </div>
 
+      {/* Polish IA al crear: dins del form perquè els pendents es serialitzin com a hidden inputs. */}
+      {!isEdit && (
+        <div className="space-y-4">
+          <PolishWithAi
+            mode="new"
+            getDraft={getDraft}
+            onDraftAccepted={onPolishAccepted}
+          />
+
+          {hasPending && (
+            <div className="rounded-md border border-sage-deep/30 bg-sage-soft/25 p-4 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-ink flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-sage-deep" strokeWidth={2} />
+                  Pendents per al moment de crear
+                </p>
+                <button
+                  type="button"
+                  onClick={clearPending}
+                  className="text-xs text-ink-soft hover:text-peach-deep inline-flex items-center gap-1"
+                >
+                  <X className="h-3.5 w-3.5" strokeWidth={2} />
+                  Esborrar pendents
+                </button>
+              </div>
+              <ul className="text-xs text-ink-soft space-y-0.5 ml-1">
+                {pendingPlaces.length > 0 && (
+                  <li className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5" strokeWidth={2} />
+                    {pendingPlaces.length}{" "}
+                    {pendingPlaces.length === 1 ? "lloc" : "llocs"} per geocodificar
+                  </li>
+                )}
+                {pendingChecklist.length > 0 && (
+                  <li className="flex items-center gap-1.5">
+                    <ListTodo className="h-3.5 w-3.5" strokeWidth={2} />
+                    {pendingChecklist.length}{" "}
+                    {pendingChecklist.length === 1 ? "item" : "items"} de checklist
+                  </li>
+                )}
+              </ul>
+              {pendingPlaces.length > 0 && (
+                <p className="text-[11px] text-ink-soft italic leading-snug">
+                  Crear amb llocs pot trigar ~{Math.ceil(pendingPlaces.length * 1.2)}s
+                  perquè cada lloc es geocodifica via OpenStreetMap.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Hidden inputs serialitzats per al server action. */}
+          <input
+            type="hidden"
+            name="pendingPlacesJson"
+            value={JSON.stringify(pendingPlaces)}
+          />
+          <input
+            type="hidden"
+            name="pendingChecklistJson"
+            value={JSON.stringify(pendingChecklist)}
+          />
+        </div>
+      )}
+
       <div className="space-y-4">
         <label className={LABEL}>Portada</label>
 
@@ -303,8 +419,16 @@ export function PlanForm({
       </div>
 
       <div className="flex items-center gap-3 pt-4 border-t border-ink-faint/30">
-        <Button type="submit" variant="primary">
-          {isEdit ? "Desar canvis" : "Crear plan"}
+        <Button type="submit" variant="primary" disabled={submitting}>
+          {submitting
+            ? isEdit
+              ? "Desant…"
+              : hasPending
+              ? "Creant i aplicant suggeriments…"
+              : "Creant…"
+            : isEdit
+            ? "Desar canvis"
+            : "Crear plan"}
         </Button>
         <Link
           href={isEdit && plan ? `/plans/${plan.id}` : "/"}
