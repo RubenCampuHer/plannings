@@ -504,7 +504,6 @@ export type ImagePolishResult = {
   newBody: string;
   added: number;
   failed: string[];
-  flagAdded: boolean;
 };
 
 type AppliedImage = {
@@ -530,41 +529,9 @@ async function uploadPexelsToBucket(
 }
 
 /**
- * Best-effort: si la destinació sembla un país, intenta afegir una bandera
- * com a primera imatge. Si Pexels no troba res o falla la pujada, no és error
- * — simplement seguim sense bandera.
- */
-async function tryFlagImage(
-  supabase: Awaited<ReturnType<typeof createSupabaseServer>>,
-  planId: string,
-  destination: string,
-): Promise<AppliedImage | null> {
-  // Heurística: si la destinació té coma, l'última peça sol ser el país
-  // ("Tokyo, Japan" → "Japan"). Sense coma, fem servir tota la cadena.
-  const country = (destination.split(",").pop() ?? destination).trim();
-  if (!country) return null;
-  const query = `${country} flag waving`;
-
-  try {
-    const photo = await searchPexelsTop(query);
-    if (!photo) return null;
-    const { path, mime } = await uploadPexelsToBucket(supabase, planId, photo.largeUrl);
-    return {
-      path,
-      alt: `Bandera de ${country}`,
-      placement: "intro",
-      mime,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Polish d'imatges: pregunta a Gemini quines fotos encaixen amb el plan,
- * intenta sempre incloure una bandera de la destinació, busca cadascuna a
- * Pexels, descarrega + puja al bucket, les insereix inline a `currentBody` i
- * crea files a `plan_photos` per a l'Àlbum.
+ * Polish d'imatges: pregunta a Gemini quines fotos encaixen amb el plan, busca
+ * cadascuna a Pexels, descarrega + puja al bucket, les insereix inline a
+ * `currentBody` i crea files a `plan_photos` per a l'Àlbum.
  *
  * IMPORTANT: NO actualitza `plans.body` a la BBDD — torna el `newBody` i el
  * client l'injecta al textarea del form. Així no es trepitja el que l'usuari
@@ -621,37 +588,26 @@ ${currentBody}
 Headings ## existents al body (usables com a placement):
 ${headingsList}
 
-Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el plan. Reparteix-les entre seccions diferents. Search queries en anglès, alt_text en català, placement = 'intro' | 'outro' | text exacte d'una heading. NO suggereixis banderes — d'això se n'encarrega el sistema apart.`;
+Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el plan. Reparteix-les entre seccions diferents. Search queries en anglès, alt_text en català, placement = 'intro' | 'outro' | text exacte d'una heading.`;
 
-  // Bandera i Gemini en paral·lel per estalviar segons.
-  const [flagResult, geminiResult] = await Promise.allSettled([
-    plan.destination
-      ? tryFlagImage(supabase, planId, plan.destination)
-      : Promise.resolve(null),
-    (async () => {
-      const client = getClient();
-      try {
-        return await client.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [{ role: "user", parts: [{ text: userMessage }] }],
-          config: {
-            systemInstruction: IMAGE_SYSTEM_INSTRUCTION,
-            responseMimeType: "application/json",
-            responseSchema: IMAGE_RESPONSE_SCHEMA,
-            temperature: 0.7,
-          },
-        });
-      } catch (e) {
-        throw translateGeminiError(e);
-      }
-    })(),
-  ]);
+  const client = getClient();
+  let response;
+  try {
+    response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: userMessage }] }],
+      config: {
+        systemInstruction: IMAGE_SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: IMAGE_RESPONSE_SCHEMA,
+        temperature: 0.7,
+      },
+    });
+  } catch (e) {
+    throw translateGeminiError(e);
+  }
 
-  if (geminiResult.status === "rejected") throw geminiResult.reason;
-  const flagApplied =
-    flagResult.status === "fulfilled" ? flagResult.value : null;
-
-  const text = geminiResult.value.text;
+  const text = response.text;
   if (!text) throw new Error("La IA no ha tornat cap suggeriment.");
 
   let parsed: {
@@ -676,11 +632,11 @@ Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el 
     }),
   );
 
-  const geminiApplied: AppliedImage[] = [];
+  const applied: AppliedImage[] = [];
   for (let i = 0; i < settled.length; i++) {
     const r = settled[i];
     if (r.status === "fulfilled" && r.value) {
-      geminiApplied.push(r.value);
+      applied.push(r.value);
     } else {
       failed.push(suggestions[i].search_query);
       if (r.status === "rejected") {
@@ -689,26 +645,20 @@ Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el 
     }
   }
 
-  // Bandera primer (placement='intro'), després la resta.
-  const allApplied: AppliedImage[] = [];
-  if (flagApplied) allApplied.push(flagApplied);
-  allApplied.push(...geminiApplied);
-
-  if (allApplied.length === 0) {
+  if (applied.length === 0) {
     return {
       newBody: currentBody,
       added: 0,
       failed,
-      flagAdded: false,
     };
   }
 
   // Insereix `pp:` markdown al body actual (no toquem la BBDD).
-  const newBody = insertInlineImages(currentBody, allApplied);
+  const newBody = insertInlineImages(currentBody, applied);
 
   // Album: les files de plan_photos sí que es desen ara — així queden visibles
   // a l'Àlbum encara que l'usuari decideixi no desar els canvis del body.
-  const photoRows = allApplied.map((a) => ({
+  const photoRows = applied.map((a) => ({
     id: crypto.randomUUID(),
     plan_id: planId,
     storage_path: a.path,
@@ -725,9 +675,8 @@ Tasca: suggereix entre ${counts.min} i ${counts.max} imatges per il·lustrar el 
 
   return {
     newBody,
-    added: allApplied.length,
+    added: applied.length,
     failed,
-    flagAdded: flagApplied !== null,
   };
 }
 

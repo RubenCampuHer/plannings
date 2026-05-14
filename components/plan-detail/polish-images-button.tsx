@@ -58,7 +58,6 @@ export function PolishImagesButton({
           ? "1 imatge inserida"
           : `${result.added} imatges inserides`,
       );
-      if (result.flagAdded) parts.push("amb bandera");
       if (result.failed.length > 0) parts.push(`${result.failed.length} sense match`);
       setSuccess(parts.join(" · ") + " — recorda desar");
     } catch (e) {
