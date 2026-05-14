@@ -4,6 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServer } from "./supabase-server";
 import { formatDateRange } from "./format";
+import { extractH2Headings } from "./toc";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY;
 
@@ -78,13 +79,26 @@ export async function sendChatMessage(
 
   const { data: plan, error: planError } = await supabase
     .from("plans")
-    .select("id,title,type,destination,start_date,end_date,summary,body")
+    .select("id,title,type,destination,start_date,end_date,summary,body,parent_plan_id")
     .eq("id", planId)
     .single();
   if (planError || !plan) throw new Error("Plan no trobat");
 
-  // Carrega context relacionat + historial en paral·lel.
-  const [placesRes, checklistRes, messagesRes] = await Promise.all([
+  // Carrega tot el context relacionat + historial en paral·lel:
+  // pare (si en té), fills (sub-plans), llocs, checklist, missatges previs.
+  const [parentRes, childrenRes, placesRes, checklistRes, messagesRes] = await Promise.all([
+    plan.parent_plan_id
+      ? supabase
+          .from("plans")
+          .select("id,title,type,destination,start_date,end_date,summary")
+          .eq("id", plan.parent_plan_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("plans")
+      .select("id,title,type,destination,start_date,end_date,summary")
+      .eq("parent_plan_id", planId)
+      .order("start_date", { ascending: true, nullsFirst: false }),
     supabase.from("places").select("name,country").eq("plan_id", planId).order("order_index"),
     supabase.from("checklist_items").select("text,done").eq("plan_id", planId),
     supabase
@@ -111,22 +125,70 @@ export async function sendChatMessage(
     plan.end_date ?? undefined,
   );
 
-  const typeLabel = { deep: "viatge llarg", weekend: "cap de setmana", day: "dia" }[
-    plan.type as "deep" | "weekend" | "day"
-  ];
+  const typeLabelOf = (t: string) =>
+    ({ deep: "viatge llarg", weekend: "cap de setmana", day: "dia" })[
+      t as "deep" | "weekend" | "day"
+    ] ?? t;
+
+  // Bloc d'informació del pla pare (si en té).
+  const parentBlock = parentRes.data
+    ? `\nAquest pla forma part d'un viatge més gran:
+- "${parentRes.data.title}" (${typeLabelOf(parentRes.data.type)}${
+        parentRes.data.destination ? `, ${parentRes.data.destination}` : ""
+      }${
+        formatDateRange(
+          parentRes.data.start_date ?? undefined,
+          parentRes.data.end_date ?? undefined,
+        )
+          ? `, ${formatDateRange(
+              parentRes.data.start_date ?? undefined,
+              parentRes.data.end_date ?? undefined,
+            )}`
+          : ""
+      }). Resum: ${parentRes.data.summary}. Enllaç: /plans/${parentRes.data.id}`
+    : "";
+
+  // Bloc dels sub-plans (fills) si n'hi ha.
+  const children = childrenRes.data ?? [];
+  const childrenBlock =
+    children.length > 0
+      ? `\nSub-plans (peces d'aquest viatge):\n${children
+          .map((c) => {
+            const dr = formatDateRange(
+              c.start_date ?? undefined,
+              c.end_date ?? undefined,
+            );
+            return `- "${c.title}" (${typeLabelOf(c.type)}${
+              c.destination ? `, ${c.destination}` : ""
+            }${dr ? `, ${dr}` : ""}): ${c.summary}. Enllaç: /plans/${c.id}`;
+          })
+          .join("\n")}`
+      : "";
+
+  // Llista de seccions H2 del body — permet al copilot remetre l'usuari a una
+  // secció concreta amb un enllaç clicable.
+  const headings = extractH2Headings(plan.body);
+  const headingsBlock =
+    headings.length > 0
+      ? `\nSeccions del cos del plan (slugs que pots usar als enllaços):\n${headings
+          .map((h) => `- "${h.text}" → #${h.id}`)
+          .join("\n")}`
+      : "";
 
   const systemInstruction = `Ets el copilot del pla "${plan.title}". Aquí tens tota la informació actual:
 
-Tipus: ${typeLabel ?? plan.type}
+Tipus: ${typeLabelOf(plan.type)}
 Destinació: ${plan.destination ?? "(sense definir)"}
 Dates: ${dateRange ?? "(sense definir)"}
 Resum: ${plan.summary}
+${parentBlock}${childrenBlock}
 
 Llocs al mapa:
 ${placesList}
 
 Checklist:
 ${checklistList}
+${headingsBlock}
 
 Cos del pla (Markdown, pot incloure imatges \`![](pp:...)\`):
 \`\`\`
@@ -138,7 +200,12 @@ Regles de resposta:
 - Sigues breu (1-4 paràgrafs) i útil. Pots usar llistes si convé.
 - Pots respondre preguntes sobre el pla, recomanar coses concretes (restaurants, hotels, llocs), comparar opcions, ajudar a decidir.
 - NO inventis dades concretes (preus exactes, horaris) — aproxima: "uns 15€/persona", "sobre les 8 del vespre".
-- Si l'usuari et demana modificar el plan (afegir lloc, canviar body, etc.), respon-li que de moment només pots ajudar amb idees i preguntes; per editar ha d'anar al detall del plan (botó "Editar") o usar el Polish amb IA.`;
+- Si l'usuari et demana modificar el plan (afegir lloc, canviar body, etc.), respon-li que de moment només pots ajudar amb idees i preguntes; per editar ha d'anar al detall del plan (botó "Editar") o usar el Polish amb IA.
+
+ENLLAÇOS (important):
+- Si la resposta es beneficia de remetre a una secció específica del body, afegeix-hi un enllaç Markdown \`[nom de la secció](#slug)\` usant SEMPRE els slugs exactes de la llista "Seccions del cos del plan". P.ex. si vols dirigir a la secció "Itinerari", escriu \`[Itinerari](#itinerari)\`.
+- Per remetre al pla pare o a un sub-plan, usa \`[títol](/plans/slug-del-pla)\` amb els enllaços exactes que apareixen al context.
+- NO inventis slugs ni rutes que no estiguin a aquest context. Si no hi ha cap secció rellevant, no posis cap enllaç.`;
 
   // Limita el context als darrers 20 missatges per estalviar tokens.
   const recentMessages = (messagesRes.data ?? []).slice(-20);

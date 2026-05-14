@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
+import { Fragment, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { Loader2, Send, Sparkles, Trash2 } from "lucide-react";
 import {
   clearChatMessages,
@@ -167,7 +168,7 @@ export function PlanChat({
           </div>
         )}
         {messages.map((m) => (
-          <ChatBubble key={m.id} message={m} />
+          <ChatBubble key={m.id} message={m} planId={planId} />
         ))}
         {pending && (
           <div className="flex justify-start">
@@ -218,8 +219,19 @@ export function PlanChat({
   );
 }
 
-function ChatBubble({ message }: { message: ChatMessage }) {
+function ChatBubble({
+  message,
+  planId,
+}: {
+  message: ChatMessage;
+  planId: string;
+}) {
   const isUser = message.role === "user";
+  // El user envia plain text; l'assistent pot enviar links Markdown que
+  // converteix a Next.js Links.
+  const rendered = isUser
+    ? message.content
+    : renderWithLinks(message.content, planId);
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
@@ -229,8 +241,74 @@ function ChatBubble({ message }: { message: ChatMessage }) {
             : "bg-cream-soft border border-ink-faint/30 text-ink rounded-bl-md"
         }`}
       >
-        {message.content}
+        {rendered}
       </div>
     </div>
   );
+}
+
+/**
+ * Parseja el text de l'assistant per detectar links Markdown `[text](href)` on
+ * href és `#slug` (secció del body) o `/plans/x[#slug]` (un altre plan,
+ * opcionalment amb secció). Tot el que no encaixi queda com a text pla.
+ *
+ * Les seccions s'enllacen a `/plans/{id}?v=resum#slug` perquè la secció no
+ * existeix al DOM si estem al room "xat" — primer cal canviar a "resum".
+ */
+function renderWithLinks(content: string, planId: string): ReactNode {
+  // Slugs `slugify()` només emeten lowercase alphanumeric + hyphen. Plan IDs
+  // segueixen el mateix patró (uniqueSlug). Aquesta regex és intencionalment
+  // estricta per no convertir tipografies aleatòries en links.
+  const re =
+    /\[([^\]]+)\]\((#[a-z0-9][a-z0-9-]*|\/plans\/[a-z0-9][a-z0-9-]*(?:#[a-z0-9][a-z0-9-]*)?)\)/g;
+
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(
+        <Fragment key={`t-${lastIndex}`}>
+          {content.slice(lastIndex, match.index)}
+        </Fragment>,
+      );
+    }
+    const [, text, target] = match;
+
+    let href: string;
+    if (target.startsWith("#")) {
+      // Secció del pla actual: canvia a Resum i afegeix l'ancora.
+      href = `/plans/${planId}?v=resum${target}`;
+    } else {
+      // `/plans/slug` o `/plans/slug#section`. Si té secció, forcem v=resum.
+      const hashIdx = target.indexOf("#");
+      if (hashIdx >= 0) {
+        const path = target.slice(0, hashIdx);
+        const hash = target.slice(hashIdx);
+        href = `${path}?v=resum${hash}`;
+      } else {
+        href = target;
+      }
+    }
+
+    parts.push(
+      <Link
+        key={`l-${match.index}`}
+        href={href}
+        className="inline text-peach-deep underline underline-offset-2 hover:text-ink font-medium"
+      >
+        {text}
+      </Link>,
+    );
+    lastIndex = re.lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push(
+      <Fragment key={`t-${lastIndex}`}>{content.slice(lastIndex)}</Fragment>,
+    );
+  }
+
+  return parts;
 }
