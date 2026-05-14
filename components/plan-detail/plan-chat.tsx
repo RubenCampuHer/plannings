@@ -1,19 +1,43 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { Loader2, Send, Sparkles, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
+import {
+  Check,
+  CheckCircle2,
+  ListTodo,
+  Loader2,
+  MapPin,
+  Send,
+  Sparkles,
+  Trash2,
+  X,
+  XCircle,
+  AlertCircle,
+  ChevronRight,
+} from "lucide-react";
+import {
+  applyProposal,
+  cancelProposal,
   clearChatMessages,
   getChatMessages,
   sendChatMessage,
   type ChatMessage,
 } from "@/lib/chat-actions";
+import type { Proposal } from "@/lib/chat-prompt";
 
 /**
- * Sala de xat amb el copilot del plan. MVP read-only: el copilot llegeix tot el
- * context del pla (metadades + llocs + checklist + body) i respon, però no pot
- * modificar res encara. Function calling vindrà a M8.2.
+ * Sala de xat amb el copilot del plan. Llegeix tot el context (metadades +
+ * places + checklist + body + pare/fills) i pot proposar canvis via function
+ * calling — l'usuari els confirma amb una targeta de proposta dins del xat.
  */
 export function PlanChat({
   planId,
@@ -22,16 +46,19 @@ export function PlanChat({
   planId: string;
   planTitle: string;
 }) {
+  const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [clearing, startClear] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Set d'ids de propostes en procés (aplicant/cancel·lant) per mostrar loaders
+  // a les targetes corresponents sense bloquejar tot el xat.
+  const [busyProposals, setBusyProposals] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Càrrega inicial de l'historial.
   useEffect(() => {
     let cancelled = false;
     getChatMessages(planId)
@@ -49,7 +76,6 @@ export function PlanChat({
     };
   }, [planId]);
 
-  // Auto-scroll cap avall quan arriba un missatge nou.
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -62,7 +88,6 @@ export function PlanChat({
     if (!text || pending) return;
     setError(null);
 
-    // Optimistic: afegim el missatge de l'usuari de seguida.
     const tempId = `temp-${crypto.randomUUID()}`;
     const optimisticUser: ChatMessage = {
       id: tempId,
@@ -75,16 +100,13 @@ export function PlanChat({
     setPending(true);
 
     try {
-      const reply = await sendChatMessage(planId, text);
-      // Substituïm el temp per la versió definitiva (mateix contingut, id real
-      // arriba a `reply` però el user message no, així que tornem a carregar).
+      await sendChatMessage(planId, text);
+      // Recarrega tots els missatges per tenir el user message amb el seu uuid
+      // real i l'assistant amb propostes correctament formatades.
       const fresh = await getChatMessages(planId);
       setMessages(fresh);
-      // Re-foca al textarea per a continuar la conversa.
       textareaRef.current?.focus();
-      void reply;
     } catch (e) {
-      // Rollback: treu l'optimistic del user.
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -93,7 +115,6 @@ export function PlanChat({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Cmd/Ctrl+Enter envia; Enter normal fa salt de línia.
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       send();
@@ -102,9 +123,7 @@ export function PlanChat({
 
   function clearConversation() {
     if (messages.length === 0) return;
-    const ok = window.confirm(
-      "Esborrar tota la conversa? No es pot desfer.",
-    );
+    const ok = window.confirm("Esborrar tota la conversa? No es pot desfer.");
     if (!ok) return;
     startClear(async () => {
       try {
@@ -116,14 +135,48 @@ export function PlanChat({
     });
   }
 
+  async function handleApply(messageId: string, proposalId: string) {
+    setBusyProposals((prev) => new Set(prev).add(proposalId));
+    try {
+      const updated = await applyProposal(planId, messageId, proposalId);
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
+      // L'aplicació pot haver canviat dades del plan (places, checklist,
+      // sub-plans) — refresquem la resta de la pàgina.
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyProposals((prev) => {
+        const next = new Set(prev);
+        next.delete(proposalId);
+        return next;
+      });
+    }
+  }
+
+  async function handleCancel(messageId: string, proposalId: string) {
+    setBusyProposals((prev) => new Set(prev).add(proposalId));
+    try {
+      const updated = await cancelProposal(planId, messageId, proposalId);
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyProposals((prev) => {
+        const next = new Set(prev);
+        next.delete(proposalId);
+        return next;
+      });
+    }
+  }
+
   return (
     <section className="flex flex-col h-full min-h-0">
       <header className="shrink-0 mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-ink-soft leading-relaxed">
-            Pregunta'm el que vulguis sobre{" "}
-            <span className="italic text-ink truncate">{planTitle}</span>. Conec
-            el body, els llocs, la checklist, i el pare/sub-plans si n'hi ha.
+            Pregunta'm o demana'm afegir coses al plan{" "}
+            <span className="italic text-ink truncate">{planTitle}</span>.
           </p>
         </div>
         {messages.length > 0 && (
@@ -159,12 +212,19 @@ export function PlanChat({
               Encara no heu parlat de res.
             </p>
             <p className="font-hand text-base text-ink-soft mt-2 -rotate-1">
-              prova: "quina millor època per anar?"
+              prova: "afegeix Cinema Verdi al mapa"
             </p>
           </div>
         )}
         {messages.map((m) => (
-          <ChatBubble key={m.id} message={m} planId={planId} />
+          <ChatBubble
+            key={m.id}
+            message={m}
+            planId={planId}
+            busyProposals={busyProposals}
+            onApply={(pid) => handleApply(m.id, pid)}
+            onCancel={(pid) => handleCancel(m.id, pid)}
+          />
         ))}
         {pending && (
           <div className="flex justify-start">
@@ -188,7 +248,7 @@ export function PlanChat({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Pregunta'm el que vulguis…"
+          placeholder="Pregunta o demana afegir alguna cosa…"
           rows={2}
           disabled={pending}
           className="w-full px-3 py-2 pr-12 rounded-md border border-ink-faint/60 bg-cream-soft text-ink text-sm placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40 resize-none disabled:opacity-60"
@@ -217,18 +277,24 @@ export function PlanChat({
 function ChatBubble({
   message,
   planId,
+  busyProposals,
+  onApply,
+  onCancel,
 }: {
   message: ChatMessage;
   planId: string;
+  busyProposals: Set<string>;
+  onApply: (proposalId: string) => void;
+  onCancel: (proposalId: string) => void;
 }) {
   const isUser = message.role === "user";
-  // El user envia plain text; l'assistent pot enviar links Markdown que
-  // converteix a Next.js Links.
   const rendered = isUser
     ? message.content
     : renderWithLinks(message.content, planId);
+  const hasProposals = !isUser && (message.proposals?.length ?? 0) > 0;
+
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       <div
         className={`max-w-[85%] sm:max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
           isUser
@@ -238,22 +304,188 @@ function ChatBubble({
       >
         {rendered}
       </div>
+      {hasProposals && (
+        <div className="max-w-[85%] sm:max-w-[80%] mt-2 space-y-2 w-full">
+          {message.proposals!.map((p) => (
+            <ProposalCard
+              key={p.id}
+              proposal={p}
+              busy={busyProposals.has(p.id)}
+              onApply={() => onApply(p.id)}
+              onCancel={() => onCancel(p.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-/**
- * Parseja el text de l'assistant per detectar links Markdown `[text](href)` on
- * href és `#slug` (secció del body) o `/plans/x[#slug]` (un altre plan,
- * opcionalment amb secció). Tot el que no encaixi queda com a text pla.
- *
- * Les seccions s'enllacen a `/plans/{id}?v=resum#slug` perquè la secció no
- * existeix al DOM si estem al room "xat" — primer cal canviar a "resum".
- */
+function ProposalCard({
+  proposal,
+  busy,
+  onApply,
+  onCancel,
+}: {
+  proposal: Proposal;
+  busy: boolean;
+  onApply: () => void;
+  onCancel: () => void;
+}) {
+  const { title, Icon } = describeProposal(proposal);
+
+  if (proposal.status === "applied") {
+    return (
+      <div className="rounded-xl border border-sage-deep/40 bg-sage-soft/30 px-4 py-3 flex items-start gap-3">
+        <CheckCircle2
+          className="h-5 w-5 text-sage-deep shrink-0 mt-0.5"
+          strokeWidth={2}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-ink font-medium">{title}</p>
+          {proposal.result_message && (
+            <p className="text-xs text-ink-soft mt-0.5">{proposal.result_message}</p>
+          )}
+          {proposal.result_path && (
+            <Link
+              href={proposal.result_path}
+              className="inline-flex items-center gap-1 text-xs text-peach-deep hover:text-ink mt-1 font-medium"
+            >
+              Veure-ho
+              <ChevronRight className="h-3 w-3" strokeWidth={2} />
+            </Link>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (proposal.status === "cancelled") {
+    return (
+      <div className="rounded-xl border border-ink-faint/40 bg-cream-soft/40 px-4 py-2 flex items-center gap-2 text-ink-soft">
+        <XCircle className="h-4 w-4 shrink-0" strokeWidth={2} />
+        <p className="text-xs">
+          Cancel·lat: <span className="line-through">{title}</span>
+        </p>
+      </div>
+    );
+  }
+
+  if (proposal.status === "failed") {
+    return (
+      <div className="rounded-xl border border-peach-deep/40 bg-peach-soft/30 px-4 py-3 flex items-start gap-3">
+        <AlertCircle
+          className="h-5 w-5 text-peach-deep shrink-0 mt-0.5"
+          strokeWidth={2}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-ink font-medium">No s'ha pogut: {title}</p>
+          {proposal.result_message && (
+            <p className="text-xs text-ink-soft mt-0.5">{proposal.result_message}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Pending
+  return (
+    <div className="rounded-xl border border-peach/40 bg-gradient-to-br from-peach-soft/30 to-cream-soft px-4 py-3 space-y-2">
+      <div className="flex items-start gap-3">
+        <Icon className="h-5 w-5 text-peach-deep shrink-0 mt-0.5" strokeWidth={2} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-ink font-medium">{title}</p>
+          <ProposalDetails proposal={proposal} />
+        </div>
+      </div>
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-peach text-white text-xs font-medium hover:bg-peach-deep disabled:opacity-50 transition-colors"
+        >
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
+          ) : (
+            <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+          )}
+          Aplicar
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-ink-soft hover:text-ink hover:bg-cream-soft disabled:opacity-50 transition-colors"
+        >
+          <X className="h-3.5 w-3.5" strokeWidth={2} />
+          Cancel·lar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function describeProposal(p: Proposal): {
+  title: string;
+  Icon: typeof MapPin;
+} {
+  const args = p.arguments;
+  switch (p.function_name) {
+    case "add_place":
+      return {
+        title: `Afegir "${String(args.name ?? "?")}" al mapa`,
+        Icon: MapPin,
+      };
+    case "add_checklist_item":
+      return {
+        title: `Afegir a la checklist: "${String(args.text ?? "?")}"`,
+        Icon: ListTodo,
+      };
+    case "add_subplan":
+      return {
+        title: `Crear sub-plan: "${String(args.title ?? "?")}"`,
+        Icon: Sparkles,
+      };
+  }
+}
+
+function ProposalDetails({ proposal }: { proposal: Proposal }) {
+  const args = proposal.arguments;
+  switch (proposal.function_name) {
+    case "add_place":
+      return (
+        <div className="text-xs text-ink-soft mt-1 space-y-0.5">
+          <p>
+            🔍 <span className="font-mono">{String(args.search_query ?? "")}</span>
+          </p>
+          {typeof args.why === "string" && args.why.trim() && (
+            <p className="italic">{args.why}</p>
+          )}
+        </div>
+      );
+    case "add_checklist_item":
+      return null;
+    case "add_subplan":
+      return (
+        <div className="text-xs text-ink-soft mt-1 space-y-0.5">
+          {typeof args.destination === "string" && args.destination.trim() && (
+            <p>📍 {args.destination}</p>
+          )}
+          {typeof args.summary === "string" && args.summary.trim() && (
+            <p className="italic">{args.summary}</p>
+          )}
+          {Boolean(args.start_date || args.end_date) && (
+            <p>
+              📅 {String(args.start_date ?? "?")} → {String(args.end_date ?? "?")}
+            </p>
+          )}
+        </div>
+      );
+  }
+}
+
 function renderWithLinks(content: string, planId: string): ReactNode {
-  // Slugs `slugify()` només emeten lowercase alphanumeric + hyphen. Plan IDs
-  // segueixen el mateix patró (uniqueSlug). Aquesta regex és intencionalment
-  // estricta per no convertir tipografies aleatòries en links.
   const re =
     /\[([^\]]+)\]\((#[a-z0-9][a-z0-9-]*|\/plans\/[a-z0-9][a-z0-9-]*(?:#[a-z0-9][a-z0-9-]*)?)\)/g;
 
@@ -273,10 +505,8 @@ function renderWithLinks(content: string, planId: string): ReactNode {
 
     let href: string;
     if (target.startsWith("#")) {
-      // Secció del pla actual: canvia a Resum i afegeix l'ancora.
       href = `/plans/${planId}?v=resum${target}`;
     } else {
-      // `/plans/slug` o `/plans/slug#section`. Si té secció, forcem v=resum.
       const hashIdx = target.indexOf("#");
       if (hashIdx >= 0) {
         const path = target.slice(0, hashIdx);

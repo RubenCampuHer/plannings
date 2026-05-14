@@ -100,4 +100,27 @@ export const CASES: EvalCase[] = [
     ideal_behavior:
       "Si Vietnam és un sub-plan, mencionar-ho i enllaçar a /plans/{id}. Si està descrit al body, resumir-lo.",
   },
+  // ===== M8.2: comandes que haurien de generar function calls =====
+  {
+    id: "command-add-place",
+    question: "Afegeix Cinema Verdi Barcelona al mapa.",
+    focus: ["recommendation"],
+    ideal_behavior:
+      "Hauria de cridar la funció add_place amb name='Cinema Verdi' (o similar) i search_query útil per Nominatim. El text de la resposta hauria de ser BREU confirmant la proposta (ex. 'D'acord, et proposo afegir-lo'). NO ha d'inventar text llarg.",
+  },
+  {
+    id: "command-add-checklist",
+    question:
+      "Afegeix 'Comprar adaptadors universals' i 'Reservar hotel a Yogyakarta' a la checklist.",
+    focus: ["recommendation"],
+    ideal_behavior:
+      "Hauria de cridar la funció add_checklist_item DOS COPS, una per cada item. Text breu confirmant la proposta.",
+  },
+  {
+    id: "qa-no-command",
+    question: "Què em recomanaries afegir a la checklist?",
+    focus: ["recommendation"],
+    ideal_behavior:
+      "Aquesta és una pregunta de Q&A (recomanació) — NO ha de cridar add_checklist_item perquè l'usuari no ha demanat afegir res explícitament. Hauria de respondre amb suggeriments en text. Si l'usuari després diu 'afegeix-los', llavors sí cridaria la funció.",
+  },
 ];

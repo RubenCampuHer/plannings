@@ -23,7 +23,10 @@ import fs from "node:fs";
 import path from "node:path";
 import WebSocket from "ws";
 
-import { buildCopilotSystemPrompt } from "../../lib/chat-prompt";
+import {
+  buildCopilotSystemPrompt,
+  COPILOT_FUNCTION_DECLARATIONS,
+} from "../../lib/chat-prompt";
 import { CASES, type EvalCase } from "./cases";
 import { judgeResponse, type JudgeResult } from "./judge";
 
@@ -174,23 +177,45 @@ async function loadContext(plan: PlanRow) {
   };
 }
 
-async function askCopilot(systemPrompt: string, question: string): Promise<string> {
+type CopilotReply = {
+  text: string;
+  functionCalls: Array<{ name: string; args: Record<string, unknown> }>;
+};
+
+async function askCopilot(
+  systemPrompt: string,
+  question: string,
+): Promise<CopilotReply> {
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
     contents: [{ role: "user", parts: [{ text: question }] }],
     config: {
       systemInstruction: systemPrompt,
-      // 0.4 dóna respostes més consistents que 0.7 sense perdre calidesa.
-      // Mateix valor que mantindrem a chat-actions.ts.
-      temperature: 0.4,
+      // Mantenim 0.6 alineat amb chat-actions.ts.
+      temperature: 0.6,
+      tools: [{ functionDeclarations: COPILOT_FUNCTION_DECLARATIONS }],
     },
   });
-  return response.text ?? "";
+
+  const parts = response.candidates?.[0]?.content?.parts ?? [];
+  let text = "";
+  const functionCalls: CopilotReply["functionCalls"] = [];
+  for (const p of parts) {
+    if (typeof p.text === "string") text += p.text;
+    if (p.functionCall) {
+      functionCalls.push({
+        name: p.functionCall.name ?? "?",
+        args: (p.functionCall.args ?? {}) as Record<string, unknown>,
+      });
+    }
+  }
+  return { text, functionCalls };
 }
 
 type CaseRun = {
   evalCase: EvalCase;
   response: string;
+  functionCalls: CopilotReply["functionCalls"];
   judge: JudgeResult;
   error?: string;
 };
@@ -235,6 +260,13 @@ function buildReport(plan: PlanRow, runs: CaseRun[]): string {
       continue;
     }
     lines.push(`<details><summary>Resposta del copilot</summary>\n\n${r.response}\n\n</details>\n`);
+    if (r.functionCalls.length > 0) {
+      lines.push(`**🛠 Function calls**:`);
+      for (const fc of r.functionCalls) {
+        lines.push(`- \`${fc.name}(${JSON.stringify(fc.args)})\``);
+      }
+      lines.push("");
+    }
     lines.push(`**Scores**: acc ${fmt(r.judge.scores.accuracy)} · calc ${fmt(r.judge.scores.calculation)} · cross ${fmt(r.judge.scores.cross_reference)} · spec ${fmt(r.judge.scores.specific_over_aggregate)} · link ${fmt(r.judge.scores.section_linking)} · tone ${fmt(r.judge.scores.tone)} · brev ${fmt(r.judge.scores.brevity)}\n`);
     if (r.judge.strengths.length > 0) {
       lines.push(`**✅ Fa bé**:`);
@@ -287,22 +319,38 @@ async function main() {
   for (const c of CASES) {
     process.stdout.write(`  · ${c.id} … `);
     try {
-      const response = await askCopilot(systemPrompt, c.question);
-      if (!response.trim()) throw new Error("resposta buida del copilot");
+      const reply = await askCopilot(systemPrompt, c.question);
+      if (!reply.text.trim() && reply.functionCalls.length === 0) {
+        throw new Error("resposta buida del copilot");
+      }
+      // El judge veu el text + una descripció textual de les function calls
+      // perquè pugui valorar si el model va decidir bé cridar-les o no.
+      const fcText =
+        reply.functionCalls.length > 0
+          ? `\n\n[function calls: ${reply.functionCalls
+              .map((fc) => `${fc.name}(${JSON.stringify(fc.args)})`)
+              .join(", ")}]`
+          : "";
       const judge = await judgeResponse({
         client: ai,
         systemPrompt,
         question: c.question,
-        response,
+        response: reply.text + fcText,
         evalCase: c,
       });
-      runs.push({ evalCase: c, response, judge });
+      runs.push({
+        evalCase: c,
+        response: reply.text,
+        functionCalls: reply.functionCalls,
+        judge,
+      });
       console.log(`overall ${judge.scores.overall}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       runs.push({
         evalCase: c,
         response: "",
+        functionCalls: [],
         judge: null as unknown as JudgeResult,
         error: msg,
       });

@@ -2,8 +2,106 @@
 // fer-se servir des de qualsevol context (server action, script d'avaluació,
 // tests). Tot el coneixement de com cridem la IA hauria de venir d'aquí.
 
+import { Type, type FunctionDeclaration } from "@google/genai";
 import { formatDateRange } from "./format";
 import { extractHeadings } from "./toc";
+
+// =====================================================================
+// Function calling (M8.2): el copilot proposa accions concretes que
+// l'usuari ha de confirmar abans que s'apliquin.
+// =====================================================================
+
+export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
+  {
+    name: "add_place",
+    description:
+      "Afegir un lloc al mapa del plan. El sistema farà geocoding via OpenStreetMap. Usa NOMÉS quan l'usuari demani EXPLÍCITAMENT afegir un lloc al mapa, no per a simples recomanacions.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        name: {
+          type: Type.STRING,
+          description: "Nom curt del lloc (ex. 'Cinema Verdi').",
+        },
+        search_query: {
+          type: Type.STRING,
+          description:
+            "Query precisa per OpenStreetMap. Inclou ciutat o regió (ex. 'Cinema Verdi Barcelona', 'Tokyo Tower').",
+        },
+        why: {
+          type: Type.STRING,
+          description:
+            "Per què val la pena (opcional, 1 frase curta — es guarda com a nota del lloc).",
+        },
+      },
+      required: ["name", "search_query"],
+    },
+  },
+  {
+    name: "add_checklist_item",
+    description:
+      "Afegir un item a la checklist del plan. Usa NOMÉS quan l'usuari demani EXPLÍCITAMENT afegir-lo. Si l'usuari pregunta 'què em falta?' és Q&A, no afegeixis sense que ho demani.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        text: {
+          type: Type.STRING,
+          description:
+            "Text curt de l'item, en català (ex. 'Comprar adaptadors universals').",
+        },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "add_subplan",
+    description:
+      "Crear un sub-plan dins del plan actual. Usa NOMÉS quan l'usuari demani EXPLÍCITAMENT crear-ne un. El sub-plan tindrà els camps mínims; l'usuari el podrà completar després.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: "Títol del sub-plan." },
+        plan_type: {
+          type: Type.STRING,
+          enum: ["deep", "weekend", "day"],
+          description:
+            "Tipus: 'deep' (viatge llarg), 'weekend' (cap de setmana), 'day' (un dia).",
+        },
+        destination: {
+          type: Type.STRING,
+          description: "Destinació (opcional).",
+        },
+        summary: {
+          type: Type.STRING,
+          description: "Resum breu (1-2 frases) per a la targeta.",
+        },
+        start_date: {
+          type: Type.STRING,
+          description: "Data inici en format YYYY-MM-DD (opcional).",
+        },
+        end_date: {
+          type: Type.STRING,
+          description: "Data fi en format YYYY-MM-DD (opcional).",
+        },
+      },
+      required: ["title", "plan_type", "summary"],
+    },
+  },
+];
+
+export type ProposalStatus = "pending" | "applied" | "cancelled" | "failed";
+
+export type Proposal = {
+  id: string;
+  function_name: "add_place" | "add_checklist_item" | "add_subplan";
+  arguments: Record<string, unknown>;
+  status: ProposalStatus;
+  /** Missatge curt amb què ha passat (resultat o error). */
+  result_message?: string;
+  /** Path opcional si el resultat porta a una nova entitat (ex. /plans/x). */
+  result_path?: string;
+  applied_at?: string;
+};
 
 const TYPE_LABELS: Record<string, string> = {
   deep: "viatge llarg",
@@ -164,10 +262,34 @@ Mai més de 4 paràgrafs en total.
 - Pla pare: \`[títol](/plans/slug-del-pare)\` sense ancora.
 - NO inventis slugs. NO posis cap enllaç forçat si no és rellevant.
 
-### 7. Quan no pots
-- Edicions del plan ("afegeix Tokyo Tower"): respon que de moment només respons; per editar, "Editar" o Polish IA.
-- Dades genuïnament absents: digues-ho i ofereix una aproximació o una acció ("afegir-ho al pressupost").
+### 7. FUNCIONS (pots proposar canvis al plan)
+Tens 3 funcions disponibles per proposar modificacions:
+- \`add_place(name, search_query, why?)\` — afegir un lloc al mapa
+- \`add_checklist_item(text)\` — afegir un item a la checklist
+- \`add_subplan(title, plan_type, summary, destination?, start_date?, end_date?)\` — crear un sub-plan
 
-### 8. To
+**REGLA CLAU**: distingeix VERB IMPERATIU vs PREGUNTA. Només crida una funció si l'usuari et dóna una ORDRE explícita ("afegeix...", "posa...", "crea..."). Per a tota la resta, responsen TEXT.
+
+✅ Crida funció:
+- "Afegeix Cinema Verdi al mapa" → \`add_place\`
+- "Posa 'Comprar adaptador' a la checklist" → \`add_checklist_item\`
+- "Crea un sub-plan per Bali" → \`add_subplan\`
+
+❌ NO crides funció (només text):
+- "Què em recomanaries afegir a la checklist?" → text amb suggeriments + acaba amb "Vols que t'afegeixi algun?"
+- "Què em fa falta?" → text llistant items que falten
+- "Quins llocs valdrien la pena a Bangkok?" → recomanacions en text
+- "Com seria un sub-plan d'Itàlia?" → descripció en text
+- "Què passaria si..." → especulació en text
+
+Quan cridis una funció, escriu també un MISSATGE BREU confirmant la proposta ("D'acord, et proposo afegir-lo."). L'usuari haurà de confirmar abans que s'apliqui.
+
+Si l'usuari demana afegir múltiples coses en una sola ordre ("afegeix X, Y i Z"), pots cridar múltiples funcions a la mateixa resposta.
+
+### 8. Quan no pots
+- Si l'usuari demana modificar coses fora d'aquestes 3 funcions (canviar el body, esborrar coses, editar dates), digues-li que això encara no està disponible i li recomanes anar a "Editar".
+- Dades genuïnament absents: digues-ho i ofereix una aproximació o una acció.
+
+### 9. To
 Català, càlid, personal, com un amic que ajuda a planificar. Sense corporativisme.`;
 }
