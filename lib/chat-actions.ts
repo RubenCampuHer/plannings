@@ -95,7 +95,7 @@ export async function sendChatMessage(
       : Promise.resolve({ data: null }),
     supabase
       .from("plans")
-      .select("id,title,type,destination,start_date,end_date,summary")
+      .select("id,title,type,destination,start_date,end_date,summary,body")
       .eq("parent_plan_id", planId)
       .order("start_date", { ascending: true, nullsFirst: false }),
     supabase.from("places").select("name,country").eq("plan_id", planId).order("order_index"),
@@ -142,6 +142,7 @@ export async function sendChatMessage(
       startDate: (c.start_date as string | null) ?? undefined,
       endDate: (c.end_date as string | null) ?? undefined,
       summary: c.summary as string,
+      body: (c.body as string | null) ?? undefined,
     })),
   });
 
@@ -164,7 +165,9 @@ export async function sendChatMessage(
       contents: history,
       config: {
         systemInstruction,
-        temperature: 0.7,
+        // 0.4 dóna respostes més consistents que 0.7 sense perdre calidesa —
+        // calibrat amb scripts/eval-copilot.
+        temperature: 0.4,
       },
     });
   } catch (e) {

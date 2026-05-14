@@ -21,12 +21,20 @@ import { createClient } from "@supabase/supabase-js";
 import { config as loadDotenv } from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
+import WebSocket from "ws";
 
 import { buildCopilotSystemPrompt } from "../../lib/chat-prompt";
 import { CASES, type EvalCase } from "./cases";
 import { judgeResponse, type JudgeResult } from "./judge";
 
 loadDotenv({ path: ".env.local" });
+
+// Node 20 no té WebSocket natiu i el client de Supabase l'inicialitza encara
+// que no l'usem (per al realtime). Polyfill global suficient per al script.
+if (typeof globalThis.WebSocket === "undefined") {
+  // @ts-expect-error — ws no és 100% API-compatible però fa la feina per init.
+  globalThis.WebSocket = WebSocket;
+}
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -119,8 +127,9 @@ async function loadContext(plan: PlanRow) {
       : Promise.resolve({ data: null }),
     supabase
       .from("plans")
-      .select("id,title,type,destination,start_date,end_date,summary")
-      .eq("parent_plan_id", plan.id),
+      .select("id,title,type,destination,start_date,end_date,summary,body")
+      .eq("parent_plan_id", plan.id)
+      .order("start_date", { ascending: true, nullsFirst: false }),
     supabase.from("places").select("name,country").eq("plan_id", plan.id).order("order_index"),
     supabase.from("checklist_items").select("text,done").eq("plan_id", plan.id),
   ]);
@@ -160,6 +169,7 @@ async function loadContext(plan: PlanRow) {
       startDate: (c.start_date as string | null) ?? undefined,
       endDate: (c.end_date as string | null) ?? undefined,
       summary: c.summary as string,
+      body: (c.body as string | null) ?? undefined,
     })),
   };
 }
@@ -170,7 +180,9 @@ async function askCopilot(systemPrompt: string, question: string): Promise<strin
     contents: [{ role: "user", parts: [{ text: question }] }],
     config: {
       systemInstruction: systemPrompt,
-      temperature: 0.7,
+      // 0.4 dóna respostes més consistents que 0.7 sense perdre calidesa.
+      // Mateix valor que mantindrem a chat-actions.ts.
+      temperature: 0.4,
     },
   });
   return response.text ?? "";
