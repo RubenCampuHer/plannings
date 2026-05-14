@@ -117,17 +117,13 @@ export function PlanChat({
   }
 
   return (
-    <section className="max-w-3xl mx-auto">
-      <header className="mb-6 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="font-serif text-2xl font-semibold flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-peach-deep" strokeWidth={2.25} />
-            Copilot
-          </h2>
-          <p className="text-sm text-ink-soft mt-1">
+    <section className="flex flex-col h-full min-h-0">
+      <header className="shrink-0 mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-ink-soft leading-relaxed">
             Pregunta'm el que vulguis sobre{" "}
-            <span className="italic text-ink">{planTitle}</span>. Conec tot el
-            plan — llocs, dates, checklist i body.
+            <span className="italic text-ink truncate">{planTitle}</span>. Conec
+            el body, els llocs, la checklist, i el pare/sub-plans si n'hi ha.
           </p>
         </div>
         {messages.length > 0 && (
@@ -139,14 +135,14 @@ export function PlanChat({
             title="Esborrar tota la conversa"
           >
             <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
-            Començar de nou
+            Esborrar
           </button>
         )}
       </header>
 
       <div
         ref={listRef}
-        className="space-y-4 max-h-[55vh] overflow-y-auto pr-1 mb-4"
+        className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-1 mb-3"
       >
         {loading && (
           <div className="text-center text-sm text-ink-soft py-6">
@@ -154,9 +150,9 @@ export function PlanChat({
           </div>
         )}
         {!loading && messages.length === 0 && (
-          <div className="text-center py-10 rounded-md bg-cream-soft/50 border border-dashed border-ink-faint/40">
+          <div className="text-center py-8 rounded-md bg-cream-soft/50 border border-dashed border-ink-faint/40">
             <Sparkles
-              className="h-8 w-8 mx-auto text-peach mb-3"
+              className="h-7 w-7 mx-auto text-peach mb-2"
               strokeWidth={1.5}
             />
             <p className="text-sm text-ink-soft">
@@ -181,39 +177,38 @@ export function PlanChat({
       </div>
 
       {error && (
-        <div className="mb-3 rounded-md border border-peach-deep/40 bg-peach-soft/40 px-3 py-2 text-sm text-ink">
+        <div className="shrink-0 mb-2 rounded-md border border-peach-deep/40 bg-peach-soft/40 px-3 py-2 text-xs text-ink">
           {error}
         </div>
       )}
 
-      <div className="relative">
+      <div className="shrink-0 relative">
         <textarea
           ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder="Pregunta'm el que vulguis…"
-          rows={3}
+          rows={2}
           disabled={pending}
-          className="w-full px-4 py-3 pr-14 rounded-md border border-ink-faint/60 bg-cream-soft text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40 resize-none disabled:opacity-60"
+          className="w-full px-3 py-2 pr-12 rounded-md border border-ink-faint/60 bg-cream-soft text-ink text-sm placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40 resize-none disabled:opacity-60"
         />
         <button
           type="button"
           onClick={send}
           disabled={!input.trim() || pending}
           aria-label="Enviar"
-          className="absolute right-3 bottom-3 grid place-items-center h-9 w-9 rounded-full bg-peach text-white shadow-[0_2px_0_0_rgba(226,122,69,0.25)] hover:bg-peach-deep disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="absolute right-2 bottom-2 grid place-items-center h-8 w-8 rounded-full bg-peach text-white shadow-[0_2px_0_0_rgba(226,122,69,0.25)] hover:bg-peach-deep disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {pending ? (
-            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
           ) : (
-            <Send className="h-4 w-4" strokeWidth={2} />
+            <Send className="h-3.5 w-3.5" strokeWidth={2} />
           )}
         </button>
       </div>
-      <p className="text-xs text-ink-soft mt-2">
-        ⌘/Ctrl + Enter per enviar. De moment el copilot només respon — modificar
-        el plan vindrà aviat.
+      <p className="shrink-0 text-[10px] text-ink-soft mt-1">
+        ⌘/Ctrl + Enter per enviar
       </p>
     </section>
   );

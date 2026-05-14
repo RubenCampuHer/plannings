@@ -11,7 +11,7 @@ import { PhotoGallery } from "@/components/plan-detail/photo-gallery";
 import { DocumentList } from "@/components/plan-detail/document-list";
 import { PlaceList } from "@/components/plan-detail/place-list";
 import { PlanBreadcrumb } from "@/components/plan-detail/plan-breadcrumb";
-import { PlanChat } from "@/components/plan-detail/plan-chat";
+import { FloatingChat } from "@/components/plan-detail/floating-chat";
 import { EditableBody } from "@/components/plan-detail/editable-body";
 import { EditableSummary } from "@/components/plan-detail/editable-summary";
 import { PlanRooms, type Room } from "@/components/plan-detail/plan-rooms";
@@ -43,7 +43,7 @@ export async function generateMetadata({
 
 function parseRoom(v: string | string[] | undefined): Room {
   const value = Array.isArray(v) ? v[0] : v;
-  if (value === "mapa" || value === "album" || value === "xat") return value;
+  if (value === "mapa" || value === "album") return value;
   return "resum";
 }
 
@@ -75,12 +75,10 @@ export default async function PlanDetailPage({
   //   per a plans `day` només quan ja hi ha fotos.
   const hasMapa = plan.places.length > 0;
   const hasAlbum = plan.photos.length > 0 || plan.type !== "day";
-  // Copilot sempre disponible — pots preguntar coses encara que el pla estigui buit.
   const available: Room[] = [
     "resum",
     ...(hasMapa ? (["mapa"] as const) : []),
     ...(hasAlbum ? (["album"] as const) : []),
-    "xat",
   ];
   const requested = parseRoom(sp.v);
   const room: Room = available.includes(requested) ? requested : "resum";
@@ -189,11 +187,11 @@ export default async function PlanDetailPage({
             <PhotoGallery planId={plan.id} photos={plan.photos} />
           </div>
         )}
-
-        {room === "xat" && (
-          <PlanChat planId={plan.id} planTitle={plan.title} />
-        )}
       </div>
+
+      {/* Copilot flotant: FAB sempre visible al detall del plan, panell
+          arrossegable al desktop / bottom sheet al mòbil. */}
+      <FloatingChat planId={plan.id} planTitle={plan.title} />
     </article>
   );
 }
