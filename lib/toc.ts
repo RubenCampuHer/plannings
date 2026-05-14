@@ -1,4 +1,4 @@
-export type TocHeading = { id: string; text: string };
+export type TocHeading = { id: string; text: string; level?: 2 | 3 };
 
 // Slug determinista i Unicode-aware (suporta accents catalans/castellans/portuguesos).
 export function slugify(text: string): string {
@@ -41,26 +41,51 @@ function stripInlineMarkdown(text: string): string {
 }
 
 export function extractH2Headings(markdown: string): TocHeading[] {
+  return extractHeadings(markdown, [2]);
+}
+
+/**
+ * Extreu headings del markdown (H2, H3, o ambdós) en ordre del document.
+ * Slugger compartit entre tots dos nivells — el slug és únic globalment, en
+ * el mateix ordre que la renderització fa al MarkdownBody, perquè els ids
+ * coincideixin amb els que afegeix el slugger del renderer.
+ */
+export function extractHeadings(
+  markdown: string,
+  levels: (2 | 3)[] = [2],
+): TocHeading[] {
   const lines = markdown.split("\n");
   const slugger = makeSlugger();
   const result: TocHeading[] = [];
   let inFence = false;
 
+  const wantH2 = levels.includes(2);
+  const wantH3 = levels.includes(3);
+
   for (const line of lines) {
-    // Saltem el contingut dins de code fences ``` perquè un `## ` allà no és heading.
     if (/^\s*```/.test(line)) {
       inFence = !inFence;
       continue;
     }
     if (inFence) continue;
 
-    // ATX H2 exactament: `## Text` (no `###`). Permet `## Text ##` opcional al final.
-    const m = /^##[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/.exec(line);
-    if (!m) continue;
+    // H3 abans que H2 perquè la regex de H2 és prefix de H3.
+    const h3 = wantH3
+      ? /^###[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/.exec(line)
+      : null;
+    if (h3) {
+      const text = stripInlineMarkdown(h3[1]);
+      if (text) result.push({ id: slugger(text), text, level: 3 });
+      continue;
+    }
 
-    const text = stripInlineMarkdown(m[1]);
-    if (!text) continue;
-    result.push({ id: slugger(text), text });
+    const h2 = wantH2
+      ? /^##[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/.exec(line)
+      : null;
+    if (h2) {
+      const text = stripInlineMarkdown(h2[1]);
+      if (text) result.push({ id: slugger(text), text, level: 2 });
+    }
   }
 
   return result;

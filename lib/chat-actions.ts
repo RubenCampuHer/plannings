@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServer } from "./supabase-server";
 import { formatDateRange } from "./format";
-import { extractH2Headings } from "./toc";
+import { extractHeadings } from "./toc";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY;
 
@@ -165,13 +165,18 @@ export async function sendChatMessage(
           .join("\n")}`
       : "";
 
-  // Llista de seccions H2 del body — permet al copilot remetre l'usuari a una
-  // secció concreta amb un enllaç clicable.
-  const headings = extractH2Headings(plan.body);
+  // Llista de seccions H2 i H3 del body — permet al copilot remetre l'usuari
+  // a una sub-secció concreta amb un enllaç clicable. Indenta les H3 perquè
+  // es vegi la jerarquia.
+  const headings = extractHeadings(plan.body, [2, 3]);
   const headingsBlock =
     headings.length > 0
-      ? `\nSeccions del cos del plan (slugs que pots usar als enllaços):\n${headings
-          .map((h) => `- "${h.text}" → #${h.id}`)
+      ? `\nSeccions del cos del plan (slugs que pots usar als enllaços — prefereix H3 si és més específic):\n${headings
+          .map((h) =>
+            h.level === 3
+              ? `  - H3 "${h.text}" → #${h.id}`
+              : `- H2 "${h.text}" → #${h.id}`,
+          )
           .join("\n")}`
       : "";
 
@@ -198,14 +203,20 @@ ${plan.body}
 Regles de resposta:
 - Respon SEMPRE en català, to càlid i personal, com un amic que ajuda a planificar (no corporatiu).
 - Sigues breu (1-4 paràgrafs) i útil. Pots usar llistes si convé.
-- Pots respondre preguntes sobre el pla, recomanar coses concretes (restaurants, hotels, llocs), comparar opcions, ajudar a decidir.
-- NO inventis dades concretes (preus exactes, horaris) — aproxima: "uns 15€/persona", "sobre les 8 del vespre".
 - Si l'usuari et demana modificar el plan (afegir lloc, canviar body, etc.), respon-li que de moment només pots ajudar amb idees i preguntes; per editar ha d'anar al detall del plan (botó "Editar") o usar el Polish amb IA.
 
+CÀLCULS I SÍNTESI (molt important):
+- USA ACTIVAMENT la informació del plan. Si l'usuari demana un total, una suma, una mitjana, una durada, una comparació entre llocs, una despesa per país, etc., busca al body i al context i FES el càlcul.
+- Mostra els components que has sumat (p.ex. "Vol 600€ + Hotel 700€ + Activitats 300€ = 1600€") perquè l'usuari vegi d'on surt el resultat.
+- Si falten algunes dades però la base hi és, fes una estimació raonable i DIGUES quins supòsits has assumit ("assumeixo ~50€/dia per àpats si no consta").
+- NO et limitis a respondre "la informació no és explícita" si pots calcular o estimar amb el que hi ha al body. Aquesta és exactament la teva feina.
+- Només quan NO hi ha cap dada al plan per fer la pregunta, aproxima ("uns 15€/persona") o suggereix on afegir-la — sense inventar xifres específiques.
+
 ENLLAÇOS (important):
-- Si la resposta es beneficia de remetre a una secció específica del body, afegeix-hi un enllaç Markdown \`[nom de la secció](#slug)\` usant SEMPRE els slugs exactes de la llista "Seccions del cos del plan". P.ex. si vols dirigir a la secció "Itinerari", escriu \`[Itinerari](#itinerari)\`.
+- Quan remetis a una secció del body, prefereix una H3 específica abans que una H2 general. P.ex. si la pregunta és sobre vols, enllaça \`[Vols](#vols)\` en comptes de \`[Pressupost](#pressupost)\`.
+- Sintaxi: \`[nom de la secció](#slug)\` usant SEMPRE els slugs exactes de la llista "Seccions del cos del plan". MAI inventis slugs.
 - Per remetre al pla pare o a un sub-plan, usa \`[títol](/plans/slug-del-pla)\` amb els enllaços exactes que apareixen al context.
-- NO inventis slugs ni rutes que no estiguin a aquest context. Si no hi ha cap secció rellevant, no posis cap enllaç.`;
+- Si no hi ha cap secció rellevant, no posis cap enllaç forçat.`;
 
   // Limita el context als darrers 20 missatges per estalviar tokens.
   const recentMessages = (messagesRes.data ?? []).slice(-20);

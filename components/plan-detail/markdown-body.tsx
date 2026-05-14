@@ -64,6 +64,13 @@ export async function MarkdownBody({ children }: { children: string }) {
               {children}
             </h2>
           ),
+          // H3 també rep id slug perquè el copilot pugui enllaçar a sub-seccions
+          // específiques (#vols, #allotjament, etc.) i no només a l'H2 pare.
+          h3: ({ children, className }) => (
+            <h3 id={slugger(extractText(children))} className={className}>
+              {children}
+            </h3>
+          ),
           li: ({ children, className }) => {
             const isStub = STUB_FIELD_RE.test(extractText(children).trim());
             return (
