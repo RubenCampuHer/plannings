@@ -87,13 +87,108 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
       required: ["title", "plan_type", "summary"],
     },
   },
+  {
+    name: "update_plan_metadata",
+    description:
+      "Edita un o més camps de metadades del plan actual (títol, resum, destinació, dates). Almenys un camp ha de ser present. Usa NOMÉS quan l'usuari demani EXPLÍCITAMENT canviar-ho ('canvia el títol', 'actualitza el resum', 'la destinació ja no és X sinó Y').",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: {
+          type: Type.STRING,
+          description: "Nou títol del plan (opcional).",
+        },
+        summary: {
+          type: Type.STRING,
+          description: "Nou resum (1-2 frases) del plan (opcional).",
+        },
+        destination: {
+          type: Type.STRING,
+          description:
+            "Nova destinació. Per esborrar-la, posa una cadena buida (opcional).",
+        },
+        start_date: {
+          type: Type.STRING,
+          description: "Nova data d'inici YYYY-MM-DD (opcional).",
+        },
+        end_date: {
+          type: Type.STRING,
+          description: "Nova data de fi YYYY-MM-DD (opcional).",
+        },
+      },
+    },
+  },
+  {
+    name: "update_plan_body",
+    description:
+      "Substitueix el cos sencer del plan actual amb un nou Markdown. Usa quan l'usuari demani reescriure el cos, eliminar seccions, o fer canvis substancials a múltiples llocs del body. CRÍTIC: has de retornar el body COMPLET, no només la part nova ni un diff. PRESERVA totes les imatges inline `![](pp:...)` que ja hi havia, excepte si l'usuari demana explícitament treure-les.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        new_body: {
+          type: Type.STRING,
+          description:
+            "El nou cos Markdown sencer. Incloure tots els headings, paràgrafs i imatges inline `![](pp:...)` que han de quedar.",
+        },
+      },
+      required: ["new_body"],
+    },
+  },
+  {
+    name: "delete_place",
+    description:
+      "Esborra un lloc del mapa pel seu id. Els ids els tens a la llista 'Llocs al mapa' del context. Usa NOMÉS quan l'usuari demani EXPLÍCITAMENT treure un lloc ('treu Sydney del mapa', 'esborra el Great Barrier Reef').",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        place_id: {
+          type: Type.STRING,
+          description: "ID del lloc tal com apareix al context.",
+        },
+      },
+      required: ["place_id"],
+    },
+  },
+  {
+    name: "update_checklist_item",
+    description:
+      "Edita el text o l'estat d'un ítem de la checklist pel seu id. Els ids els tens a la llista 'Checklist' del context. Almenys un de text/done s'ha de proporcionar.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        item_id: {
+          type: Type.STRING,
+          description: "ID de l'ítem tal com apareix al context.",
+        },
+        text: {
+          type: Type.STRING,
+          description: "Nou text de l'ítem (opcional).",
+        },
+        done: {
+          type: Type.BOOLEAN,
+          description:
+            "Marcar com a fet (true) o desmarcar (false) (opcional).",
+        },
+      },
+      required: ["item_id"],
+    },
+  },
 ];
 
 export type ProposalStatus = "pending" | "applied" | "cancelled" | "failed";
 
+export type ProposalFunctionName =
+  | "add_place"
+  | "add_checklist_item"
+  | "add_subplan"
+  | "update_plan_metadata"
+  | "update_plan_body"
+  | "delete_place"
+  | "update_checklist_item";
+
 export type Proposal = {
   id: string;
-  function_name: "add_place" | "add_checklist_item" | "add_subplan";
+  function_name: ProposalFunctionName;
   arguments: Record<string, unknown>;
   status: ProposalStatus;
   /** Missatge curt amb què ha passat (resultat o error). */
@@ -101,9 +196,10 @@ export type Proposal = {
   /** Path opcional si el resultat porta a una nova entitat (ex. /plans/x). */
   result_path?: string;
   applied_at?: string;
-  /** Preview pre-resolt: per add_place, geocoding fet abans de la confirmació
-   *  perquè l'usuari sàpiga exactament on aterrarà el lloc. Null si encara no
-   *  s'ha resolt o no aplica a aquesta funció. */
+  /** Preview pre-resolt amb dades capturades en el moment de la proposta —
+   *  geocoding per a add_place, "abans" per a updates/deletes — perquè
+   *  l'usuari sàpiga exactament què s'aplicarà i, en cas d'updates, què
+   *  canvia respecte a l'estat actual. */
   preview?: {
     /** add_place: ubicació geocodificada. */
     geocoded?: {
@@ -112,6 +208,32 @@ export type Proposal = {
       lat: number;
       lng: number;
       displayName: string;
+    };
+    /** delete_place: snapshot del lloc abans d'esborrar-lo. */
+    place_before?: {
+      name: string;
+      country?: string;
+    };
+    /** update_checklist_item: text/done previs per fer diff. */
+    item_before?: {
+      text: string;
+      done: boolean;
+    };
+    /** update_plan_metadata: valors previs dels camps que canvien. */
+    metadata_before?: {
+      title?: string;
+      summary?: string;
+      destination?: string;
+      start_date?: string;
+      end_date?: string;
+    };
+    /** update_plan_body: caràcters / línies del cos actual i del proposat,
+     *  per mostrar la magnitud del canvi a la card. */
+    body_stats?: {
+      before_chars: number;
+      before_lines: number;
+      after_chars: number;
+      after_lines: number;
     };
   };
 };
@@ -136,8 +258,8 @@ export type CopilotPlanContext = {
   endDate?: string;
   summary: string;
   body: string;
-  places: Array<{ name: string; country?: string }>;
-  checklist: Array<{ text: string; done: boolean }>;
+  places: Array<{ id: string; name: string; country?: string }>;
+  checklist: Array<{ id: string; text: string; done: boolean }>;
   parent?: {
     id: string;
     title: string;
@@ -168,13 +290,20 @@ export function buildCopilotSystemPrompt(
   const placesList =
     ctx.places.length > 0
       ? ctx.places
-          .map((p) => `- ${p.name}${p.country ? ` (${p.country})` : ""}`)
+          .map(
+            (p) =>
+              `- id=${p.id} · ${p.name}${p.country ? ` (${p.country})` : ""}`,
+          )
           .join("\n")
       : "(cap)";
 
   const checklistList =
     ctx.checklist.length > 0
-      ? ctx.checklist.map((c) => `- [${c.done ? "x" : " "}] ${c.text}`).join("\n")
+      ? ctx.checklist
+          .map(
+            (c) => `- [${c.done ? "x" : " "}] id=${c.id} · ${c.text}`,
+          )
+          .join("\n")
       : "(cap)";
 
   const dateRange = formatDateRange(ctx.startDate, ctx.endDate);
@@ -288,31 +417,49 @@ ${
 
 Usuari: "afegeix Cinema Verdi al mapa"
 Tu: "Per afegir-lo al mapa cal que canviïs a mode Edició a dalt del xat — des d'allà podràs confirmar la proposta. Si em dius una mica més de què és (ciutat, etc.) jo prepararé la cerca quan canviïs."`
-    : `Estàs en mode EDICIÓ. Tens 3 funcions disponibles per proposar modificacions:
+    : `Estàs en mode EDICIÓ. Tens 7 funcions disponibles per proposar modificacions:
+
+**AFEGIR** (creació):
 - \`add_place(name, search_query, why?)\` — afegir un lloc al mapa
 - \`add_checklist_item(text)\` — afegir un item a la checklist
 - \`add_subplan(title, plan_type, summary, destination?, start_date?, end_date?)\` — crear un sub-plan
 
-**REGLA CLAU**: distingeix VERB IMPERATIU vs PREGUNTA. Només crida una funció si l'usuari et dóna una ORDRE explícita ("afegeix...", "posa...", "crea..."). Per a tota la resta, responsen TEXT.
+**EDITAR** (modificació):
+- \`update_plan_metadata(title?, summary?, destination?, start_date?, end_date?)\` — canvia un o més camps de metadades (almenys un)
+- \`update_plan_body(new_body)\` — substitueix el cos sencer del plan (Markdown)
+- \`update_checklist_item(item_id, text?, done?)\` — edita text o estat d'un ítem (usa l'id de la llista 'Checklist')
+
+**ESBORRAR**:
+- \`delete_place(place_id)\` — treu un lloc del mapa (usa l'id de la llista 'Llocs al mapa')
+
+**REGLA CLAU**: distingeix VERB IMPERATIU vs PREGUNTA. Només crida una funció si l'usuari et dóna una ORDRE explícita ("afegeix...", "canvia...", "esborra...", "treu..."). Per a tota la resta, respon en TEXT.
 
 ✅ Crida funció:
 - "Afegeix Cinema Verdi al mapa" → \`add_place\`
-- "Posa 'Comprar adaptador' a la checklist" → \`add_checklist_item\`
-- "Crea un sub-plan per Bali" → \`add_subplan\`
+- "Canvia el títol a 'Aventura Asiàtica'" → \`update_plan_metadata\`
+- "Treu Sydney del mapa" → \`delete_place\`
+- "Marca 'Comprar adaptador' com a fet" → \`update_checklist_item\`
+- "Reescriu el body sense referències a Austràlia" → \`update_plan_body\` (amb el body COMPLET nou)
 
 ❌ NO crides funció (només text):
-- "Què em recomanaries afegir a la checklist?" → text amb suggeriments + acaba amb "Vols que t'afegeixi algun?"
-- "Què em fa falta?" → text llistant items que falten
-- "Quins llocs valdrien la pena a Bangkok?" → recomanacions en text
-- "Com seria un sub-plan d'Itàlia?" → descripció en text
+- "Què em recomanaries afegir?" → text amb suggeriments
+- "Quin títol em proposes?" → text amb opcions, acaba amb "Vols que el canviï?"
+- "Què hauria d'esborrar?" → text llistant possibles candidats
 
-Quan cridis una funció, escriu també un MISSATGE BREU confirmant la proposta ("D'acord, et proposo afegir-lo."). L'usuari haurà de confirmar abans que s'apliqui — el sistema mostrarà un preview amb les dades resoltes.
+**REGLES ESPECÍFIQUES per update_plan_body**:
+1. Has de retornar el BODY COMPLET, no un diff ni només la part nova.
+2. PRESERVA totes les imatges inline \`![](pp:...)\` que ja hi havia (excepte si l'usuari demana treure-les explícitament).
+3. PRESERVA el to, l'estructura H2/H3 i les imatges de seccions no afectades.
+4. Si l'edit és puntual (canviar 1-2 frases), valora si val més enviar el body sencer o demanar a l'usuari que ho faci des de l'editor.
 
-Si l'usuari demana afegir múltiples coses en una sola ordre ("afegeix X, Y i Z"), pots cridar múltiples funcions a la mateixa resposta.`
+**EDITS MASSIUS** ("treu X de tot", "actualitza totes les referències a Y"):
+Pots cridar diverses funcions en una sola resposta per cobrir-ho tot. Exemple, si l'usuari diu "treu Austràlia de tot": crida \`update_plan_metadata\` (destination, summary), \`update_plan_body\` (nou body sense referències), \`delete_place\` per a cada lloc australià, \`update_checklist_item\` per a cada ítem que el mencioni. Si el plan té sub-plans afectats, recomana a l'usuari que obri el chat del sub-plan per fer-ho allà (cada chat opera només sobre el seu propi plan).
+
+Quan cridis una funció, escriu també un MISSATGE BREU confirmant la proposta. L'usuari haurà de confirmar cadascuna abans que s'apliqui.`
 }
 
 ### 8. Quan no pots
-- Si l'usuari demana modificar coses fora d'aquestes 3 funcions (canviar el body, esborrar coses, editar dates), digues-li que això encara no està disponible i li recomanes anar a "Editar".
+- Si l'usuari demana modificar coses d'un sub-plan o del pla pare, recorda-li que cada chat opera sobre el seu propi plan i que ho ha de fer des d'allà.
 - Dades genuïnament absents: digues-ho i ofereix una aproximació o una acció.
 
 ### 9. To

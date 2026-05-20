@@ -107,8 +107,8 @@ export async function sendChatMessage(
       .select("id,title,type,destination,start_date,end_date,summary,body")
       .eq("parent_plan_id", planId)
       .order("start_date", { ascending: true, nullsFirst: false }),
-    supabase.from("places").select("name,country").eq("plan_id", planId).order("order_index"),
-    supabase.from("checklist_items").select("text,done").eq("plan_id", planId),
+    supabase.from("places").select("id,name,country").eq("plan_id", planId).order("order_index"),
+    supabase.from("checklist_items").select("id,text,done").eq("plan_id", planId),
     supabase
       .from("plan_messages")
       .select("role,content")
@@ -126,10 +126,12 @@ export async function sendChatMessage(
     summary: plan.summary,
     body: plan.body,
     places: (placesRes.data ?? []).map((p) => ({
+      id: p.id as string,
       name: p.name as string,
       country: (p.country as string | null) ?? undefined,
     })),
     checklist: (checklistRes.data ?? []).map((c) => ({
+      id: c.id as string,
       text: c.text as string,
       done: c.done as boolean,
     })),
@@ -204,7 +206,11 @@ export async function sendChatMessage(
       if (
         name === "add_place" ||
         name === "add_checklist_item" ||
-        name === "add_subplan"
+        name === "add_subplan" ||
+        name === "update_plan_metadata" ||
+        name === "update_plan_body" ||
+        name === "delete_place" ||
+        name === "update_checklist_item"
       ) {
         proposals.push({
           id: crypto.randomUUID(),
@@ -216,38 +222,139 @@ export async function sendChatMessage(
     }
   }
 
-  // Pre-geocoding d'add_place: el preview ha de mostrar la ubicació resolta
-  // abans de demanar confirmació. Si Nominatim no troba res, ja marquem la
-  // proposta com a failed perquè l'usuari pugui afinar la query sense haver
-  // de clicar Aplicar i veure-ho fallar.
+  // Pre-resol previews per a cada tipus de proposta. Per a updates/deletes,
+  // capturem l'estat "abans" en aquest moment perquè la card pugui mostrar
+  // el diff a l'usuari abans de confirmar.
   await Promise.all(
     proposals.map(async (p) => {
-      if (p.function_name !== "add_place") return;
-      const query =
-        typeof p.arguments.search_query === "string"
-          ? p.arguments.search_query
-          : "";
-      if (!query) return;
       try {
-        const results = await geocodeSearch(query);
-        const first = results[0];
-        if (first) {
+        if (p.function_name === "add_place") {
+          const query =
+            typeof p.arguments.search_query === "string"
+              ? p.arguments.search_query
+              : "";
+          if (!query) return;
+          const results = await geocodeSearch(query);
+          const first = results[0];
+          if (first) {
+            p.preview = {
+              geocoded: {
+                name: first.name,
+                country: first.country,
+                lat: first.lat,
+                lng: first.lng,
+                displayName: first.displayName,
+              },
+            };
+          } else {
+            p.status = "failed";
+            p.result_message = `OpenStreetMap no ha trobat "${query}". Prova amb més detall (ciutat, país).`;
+          }
+          return;
+        }
+
+        if (p.function_name === "delete_place") {
+          const placeId =
+            typeof p.arguments.place_id === "string" ? p.arguments.place_id : "";
+          if (!placeId) {
+            p.status = "failed";
+            p.result_message = "Manca place_id.";
+            return;
+          }
+          const { data: row } = await supabase
+            .from("places")
+            .select("name,country,plan_id")
+            .eq("id", placeId)
+            .maybeSingle();
+          if (!row || row.plan_id !== planId) {
+            p.status = "failed";
+            p.result_message = "El lloc no existeix o no pertany a aquest plan.";
+            return;
+          }
           p.preview = {
-            geocoded: {
-              name: first.name,
-              country: first.country,
-              lat: first.lat,
-              lng: first.lng,
-              displayName: first.displayName,
+            place_before: {
+              name: row.name as string,
+              country: (row.country as string | null) ?? undefined,
             },
           };
-        } else {
-          p.status = "failed";
-          p.result_message = `OpenStreetMap no ha trobat "${query}". Prova amb més detall (ciutat, país).`;
+          return;
+        }
+
+        if (p.function_name === "update_checklist_item") {
+          const itemId =
+            typeof p.arguments.item_id === "string" ? p.arguments.item_id : "";
+          if (!itemId) {
+            p.status = "failed";
+            p.result_message = "Manca item_id.";
+            return;
+          }
+          const { data: row } = await supabase
+            .from("checklist_items")
+            .select("text,done,plan_id")
+            .eq("id", itemId)
+            .maybeSingle();
+          if (!row || row.plan_id !== planId) {
+            p.status = "failed";
+            p.result_message = "L'ítem no existeix o no pertany a aquest plan.";
+            return;
+          }
+          p.preview = {
+            item_before: {
+              text: row.text as string,
+              done: row.done as boolean,
+            },
+          };
+          return;
+        }
+
+        if (p.function_name === "update_plan_metadata") {
+          // Captura només els valors actuals dels camps que el model proposa
+          // modificar — així la card pot mostrar abans/després només pel
+          // que realment canvia.
+          const args = p.arguments;
+          const before: NonNullable<Proposal["preview"]>["metadata_before"] = {};
+          if (typeof args.title === "string") before.title = plan.title;
+          if (typeof args.summary === "string") before.summary = plan.summary;
+          if (typeof args.destination === "string") {
+            before.destination = (plan.destination as string | null) ?? "";
+          }
+          if (typeof args.start_date === "string") {
+            before.start_date = (plan.start_date as string | null) ?? "";
+          }
+          if (typeof args.end_date === "string") {
+            before.end_date = (plan.end_date as string | null) ?? "";
+          }
+          if (Object.keys(before).length === 0) {
+            p.status = "failed";
+            p.result_message = "Cap camp vàlid per actualitzar.";
+            return;
+          }
+          p.preview = { metadata_before: before };
+          return;
+        }
+
+        if (p.function_name === "update_plan_body") {
+          const newBody =
+            typeof p.arguments.new_body === "string" ? p.arguments.new_body : "";
+          if (!newBody) {
+            p.status = "failed";
+            p.result_message = "Body nou buit.";
+            return;
+          }
+          const beforeBody = (plan.body as string | null) ?? "";
+          p.preview = {
+            body_stats: {
+              before_chars: beforeBody.length,
+              before_lines: beforeBody.split("\n").length,
+              after_chars: newBody.length,
+              after_lines: newBody.split("\n").length,
+            },
+          };
+          return;
         }
       } catch (e) {
         p.status = "failed";
-        p.result_message = `Error a Nominatim: ${e instanceof Error ? e.message : String(e)}`;
+        p.result_message = `Error preparant proposta: ${e instanceof Error ? e.message : String(e)}`;
       }
     }),
   );
@@ -470,6 +577,124 @@ async function executeAddSubplan(
   };
 }
 
+async function executeUpdatePlanMetadata(
+  planId: string,
+  args: Record<string, unknown>,
+): Promise<ExecuteResult> {
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const changed: string[] = [];
+  if (typeof args.title === "string" && args.title.trim()) {
+    patch.title = args.title.trim();
+    changed.push("títol");
+  }
+  if (typeof args.summary === "string") {
+    patch.summary = args.summary.trim();
+    changed.push("resum");
+  }
+  if (typeof args.destination === "string") {
+    const v = args.destination.trim();
+    patch.destination = v.length > 0 ? v : null;
+    changed.push("destinació");
+  }
+  const isDateStr = (s: unknown): s is string =>
+    typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  if (isDateStr(args.start_date)) {
+    patch.start_date = args.start_date;
+    changed.push("data inici");
+  }
+  if (isDateStr(args.end_date)) {
+    patch.end_date = args.end_date;
+    changed.push("data fi");
+  }
+  if (changed.length === 0) {
+    return { success: false, message: "Cap camp vàlid per actualitzar." };
+  }
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase.from("plans").update(patch).eq("id", planId);
+  if (error) {
+    return { success: false, message: `Error actualitzant: ${error.message}` };
+  }
+  return { success: true, message: `Actualitzat: ${changed.join(", ")}.` };
+}
+
+async function executeUpdatePlanBody(
+  planId: string,
+  args: Record<string, unknown>,
+): Promise<ExecuteResult> {
+  const newBody = typeof args.new_body === "string" ? args.new_body : "";
+  if (!newBody.trim()) {
+    return { success: false, message: "El nou body no pot estar buit." };
+  }
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase
+    .from("plans")
+    .update({ body: newBody, updated_at: new Date().toISOString() })
+    .eq("id", planId);
+  if (error) {
+    return { success: false, message: `Error actualitzant body: ${error.message}` };
+  }
+  return { success: true, message: "Body actualitzat." };
+}
+
+async function executeDeletePlace(
+  planId: string,
+  args: Record<string, unknown>,
+): Promise<ExecuteResult> {
+  const placeId = typeof args.place_id === "string" ? args.place_id : "";
+  if (!placeId) return { success: false, message: "Manca place_id." };
+  const supabase = await createSupabaseServer();
+  // Comprova que pertany al plan abans d'esborrar — defensa contra
+  // alucinacions d'id del model.
+  const { data: row } = await supabase
+    .from("places")
+    .select("name,plan_id")
+    .eq("id", placeId)
+    .maybeSingle();
+  if (!row || row.plan_id !== planId) {
+    return { success: false, message: "El lloc no existeix o no pertany a aquest plan." };
+  }
+  const { error } = await supabase.from("places").delete().eq("id", placeId);
+  if (error) {
+    return { success: false, message: `Error esborrant: ${error.message}` };
+  }
+  return { success: true, message: `Esborrat "${row.name}" del mapa.` };
+}
+
+async function executeUpdateChecklistItem(
+  planId: string,
+  args: Record<string, unknown>,
+): Promise<ExecuteResult> {
+  const itemId = typeof args.item_id === "string" ? args.item_id : "";
+  if (!itemId) return { success: false, message: "Manca item_id." };
+  const patch: Record<string, unknown> = {};
+  if (typeof args.text === "string" && args.text.trim()) {
+    patch.text = args.text.trim();
+  }
+  if (typeof args.done === "boolean") {
+    patch.done = args.done;
+  }
+  if (Object.keys(patch).length === 0) {
+    return { success: false, message: "Cap camp vàlid per actualitzar (text o done)." };
+  }
+  const supabase = await createSupabaseServer();
+  const { data: row } = await supabase
+    .from("checklist_items")
+    .select("plan_id")
+    .eq("id", itemId)
+    .maybeSingle();
+  if (!row || row.plan_id !== planId) {
+    return { success: false, message: "L'ítem no existeix o no pertany a aquest plan." };
+  }
+  const { error } = await supabase
+    .from("checklist_items")
+    .update(patch)
+    .eq("id", itemId);
+  if (error) {
+    return { success: false, message: `Error actualitzant ítem: ${error.message}` };
+  }
+  return { success: true, message: "Ítem actualitzat." };
+}
+
 async function executeProposal(
   planId: string,
   proposal: Proposal,
@@ -481,8 +706,16 @@ async function executeProposal(
       return executeAddChecklistItem(planId, proposal.arguments);
     case "add_subplan":
       return executeAddSubplan(planId, proposal.arguments);
+    case "update_plan_metadata":
+      return executeUpdatePlanMetadata(planId, proposal.arguments);
+    case "update_plan_body":
+      return executeUpdatePlanBody(planId, proposal.arguments);
+    case "delete_place":
+      return executeDeletePlace(planId, proposal.arguments);
+    case "update_checklist_item":
+      return executeUpdateChecklistItem(planId, proposal.arguments);
     default:
-      return { success: false, message: `Funció desconeguda: ${proposal.function_name}` };
+      return { success: false, message: `Funció desconeguda: ${(proposal as { function_name: string }).function_name}` };
   }
 }
 

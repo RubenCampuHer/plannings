@@ -13,16 +13,19 @@ import {
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  FileText,
   ListTodo,
   Loader2,
   MapPin,
+  Pencil,
   Send,
   Sparkles,
   Trash2,
   X,
   XCircle,
   AlertCircle,
-  ChevronRight,
 } from "lucide-react";
 import {
   applyProposal,
@@ -514,6 +517,24 @@ function describeProposal(p: Proposal): {
         title: `Crear sub-plan: "${String(args.title ?? "?")}"`,
         Icon: Sparkles,
       };
+    case "update_plan_metadata":
+      return {
+        title: "Actualitzar metadades del plan",
+        Icon: Pencil,
+      };
+    case "update_plan_body":
+      return {
+        title: "Reescriure el cos del plan",
+        Icon: FileText,
+      };
+    case "delete_place": {
+      const name = p.preview?.place_before?.name ?? "lloc";
+      return { title: `Esborrar "${name}" del mapa`, Icon: Trash2 };
+    }
+    case "update_checklist_item": {
+      const before = p.preview?.item_before?.text ?? "ítem";
+      return { title: `Editar checklist: "${before}"`, Icon: ListTodo };
+    }
   }
 }
 
@@ -563,7 +584,121 @@ function ProposalDetails({ proposal }: { proposal: Proposal }) {
           )}
         </div>
       );
+    case "update_plan_metadata": {
+      const before = proposal.preview?.metadata_before ?? {};
+      const fields: Array<[string, string | undefined, string | undefined]> = [
+        ["Títol", before.title, typeof args.title === "string" ? args.title : undefined],
+        ["Resum", before.summary, typeof args.summary === "string" ? args.summary : undefined],
+        ["Destinació", before.destination, typeof args.destination === "string" ? args.destination : undefined],
+        ["Inici", before.start_date, typeof args.start_date === "string" ? args.start_date : undefined],
+        ["Fi", before.end_date, typeof args.end_date === "string" ? args.end_date : undefined],
+      ];
+      return (
+        <div className="text-xs mt-1 space-y-1.5">
+          {fields
+            .filter(([, , next]) => next !== undefined)
+            .map(([label, prev, next]) => (
+              <div key={label}>
+                <p className="text-ink-soft font-medium">{label}</p>
+                <p className="text-ink-soft line-through opacity-70 break-words">
+                  {prev || "(buit)"}
+                </p>
+                <p className="text-ink break-words">{next || "(buit)"}</p>
+              </div>
+            ))}
+        </div>
+      );
+    }
+    case "update_plan_body": {
+      const stats = proposal.preview?.body_stats;
+      const newBody = typeof args.new_body === "string" ? args.new_body : "";
+      return (
+        <div className="text-xs text-ink-soft mt-1 space-y-1.5">
+          {stats && (
+            <p>
+              {stats.before_chars} car · {stats.before_lines} línies →{" "}
+              <span className="text-ink font-medium">
+                {stats.after_chars} car · {stats.after_lines} línies
+              </span>{" "}
+              <span
+                className={
+                  stats.after_chars < stats.before_chars
+                    ? "text-peach-deep"
+                    : "text-sage-deep"
+                }
+              >
+                ({stats.after_chars - stats.before_chars > 0 ? "+" : ""}
+                {stats.after_chars - stats.before_chars} car)
+              </span>
+            </p>
+          )}
+          <BodyPreviewCollapsible body={newBody} />
+        </div>
+      );
+    }
+    case "delete_place": {
+      const before = proposal.preview?.place_before;
+      return (
+        <div className="text-xs text-ink-soft mt-1">
+          {before ? (
+            <p>
+              📍 <span className="line-through">{before.name}</span>
+              {before.country && ` (${before.country})`}
+            </p>
+          ) : (
+            <p className="font-mono">id={String(args.place_id ?? "?")}</p>
+          )}
+        </div>
+      );
+    }
+    case "update_checklist_item": {
+      const before = proposal.preview?.item_before;
+      const nextText = typeof args.text === "string" ? args.text : undefined;
+      const nextDone = typeof args.done === "boolean" ? args.done : undefined;
+      return (
+        <div className="text-xs mt-1 space-y-1">
+          {nextText !== undefined && (
+            <>
+              <p className="text-ink-soft line-through opacity-70 break-words">
+                {before?.text ?? "(?)"}
+              </p>
+              <p className="text-ink break-words">{nextText}</p>
+            </>
+          )}
+          {nextDone !== undefined && (
+            <p className="text-ink-soft">
+              {nextDone ? "✓ marcar com a fet" : "□ desmarcar"}
+            </p>
+          )}
+        </div>
+      );
+    }
   }
+}
+
+function BodyPreviewCollapsible({ body }: { body: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 text-peach-deep hover:text-ink text-xs font-medium"
+      >
+        {open ? (
+          <ChevronDown className="h-3 w-3" strokeWidth={2.5} />
+        ) : (
+          <ChevronRight className="h-3 w-3" strokeWidth={2.5} />
+        )}
+        {open ? "Amaga el cos nou" : "Veure el cos nou"}
+      </button>
+      {open && (
+        <pre className="mt-2 p-2 rounded-md bg-cream-deep/60 border border-ink-faint/40 text-[11px] text-ink whitespace-pre-wrap break-words max-h-72 overflow-auto font-sans">
+          {body}
+        </pre>
+      )}
+    </div>
+  );
 }
 
 function renderWithLinks(content: string, planId: string): ReactNode {

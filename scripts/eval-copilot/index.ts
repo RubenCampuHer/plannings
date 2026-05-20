@@ -134,8 +134,8 @@ async function loadContext(plan: PlanRow) {
       .select("id,title,type,destination,start_date,end_date,summary,body")
       .eq("parent_plan_id", plan.id)
       .order("start_date", { ascending: true, nullsFirst: false }),
-    supabase.from("places").select("name,country").eq("plan_id", plan.id).order("order_index"),
-    supabase.from("checklist_items").select("text,done").eq("plan_id", plan.id),
+    supabase.from("places").select("id,name,country").eq("plan_id", plan.id).order("order_index"),
+    supabase.from("checklist_items").select("id,text,done").eq("plan_id", plan.id),
   ]);
 
   return {
@@ -147,10 +147,12 @@ async function loadContext(plan: PlanRow) {
     summary: plan.summary,
     body: plan.body,
     places: (placesRes.data ?? []).map((p) => ({
+      id: p.id as string,
       name: p.name as string,
       country: (p.country as string | null) ?? undefined,
     })),
     checklist: (checklistRes.data ?? []).map((c) => ({
+      id: c.id as string,
       text: c.text as string,
       done: c.done as boolean,
     })),
