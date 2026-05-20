@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTransition } from "react";
-import { Archive, ArchiveRestore, Pencil, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Pencil, Share2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { archivePlan, deletePlan, unarchivePlan } from "@/lib/plan-actions";
 
@@ -68,6 +68,17 @@ export function PlanActionsBar({ planId, planTitle, isArchived }: Props) {
           </>
         )}
       </Button>
+      <Link
+        href={`/plans/${planId}/print?auto=0`}
+        target="_blank"
+        rel="noopener"
+        title="Obrir vista per imprimir / desar com a PDF per compartir"
+      >
+        <Button variant="ghost" size="sm" disabled={isPending}>
+          <Share2 className="h-4 w-4" strokeWidth={2} />
+          Compartir
+        </Button>
+      </Link>
       <Link href={`/plans/${planId}/edit`}>
         <Button variant="primary" size="sm" disabled={isPending}>
           <Pencil className="h-4 w-4" strokeWidth={2} />
