@@ -405,6 +405,31 @@ export async function getChildPlanRefs(
   }));
 }
 
+/**
+ * Carrega tots els fills d'un pare amb el seu contingut sencer (body, places,
+ * checklist, expenses, photos). Útil per a exports que han d'incloure el
+ * detall complet de cada sub-plan, no només el ref. Ordenat per start_date
+ * (els fills sense data van al final).
+ */
+export async function getChildPlans(parentId: string): Promise<Plan[]> {
+  const supabase = await createSupabaseServer();
+  const { data, error } = await supabase
+    .from("plans")
+    .select(PLAN_COLUMNS)
+    .eq("parent_plan_id", parentId)
+    .order("start_date", { ascending: true, nullsFirst: false });
+  if (error) fail(`plans (full children of ${parentId})`, error);
+
+  const rows = (data ?? []) as PlanRow[];
+  const [rel, coverUrls] = await Promise.all([
+    loadRelations(rows.map((r) => r.id)),
+    signCoverUrls(rows),
+  ]);
+  return rows.map((r) =>
+    assemble(r, rel, r.cover_image_path ? coverUrls.get(r.cover_image_path) : undefined),
+  );
+}
+
 export async function getAllPlanIds(): Promise<string[]> {
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.from("plans").select("id");

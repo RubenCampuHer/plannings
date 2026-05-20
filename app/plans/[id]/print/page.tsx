@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MapPin, Calendar, Coins, ArrowLeft } from "lucide-react";
-import { MarkdownBody } from "@/components/plan-detail/markdown-body";
+import { ArrowLeft } from "lucide-react";
 import { AutoPrint, PrintButton } from "@/components/plan-detail/auto-print";
-import { formatDateRange, formatMoney, formatShortDate } from "@/lib/format";
-import { getChildPlanRefs, getPlanById } from "@/lib/plans";
+import {
+  PlanCoverPage,
+  PlanContent,
+  getPlanSections,
+} from "@/components/plan-detail/print-plan-content";
+import { getChildPlans, getPlanById } from "@/lib/plans";
+import { extractH2Headings } from "@/lib/toc";
 
 export const dynamic = "force-dynamic";
 
@@ -32,18 +36,19 @@ export default async function PlanPrintPage({
   const plan = await getPlanById(id);
   if (!plan) notFound();
 
-  const dateRange = formatDateRange(plan.startDate, plan.endDate);
-  const budget = formatMoney(plan.budgetTotal, plan.budgetCurrency);
-  const children = await getChildPlanRefs(plan.id);
-  const orderedPlaces = [...plan.places].sort(
-    (a, b) => a.orderIndex - b.orderIndex,
-  );
+  const children = await getChildPlans(plan.id);
   const autoFire = sp.auto !== "0";
+
+  const mainAnchor = `plan-${plan.id}`;
+  const mainSections = getPlanSections(plan);
+  const mainHeadings = mainSections.hasBody
+    ? extractH2Headings(plan.body)
+    : [];
 
   return (
     <>
-      {/* Amaga header/footer del root layout només en aquesta ruta + ajusta
-          marges a A4 en mode impressió. Les <style> tags s'hoisten a <head>
+      {/* Estils només per a aquesta ruta — amaguen el header/footer del root
+          layout i ajusten les pàgines A4. Les <style> tags s'hoisten a <head>
           automàticament en React 19. */}
       <style>{`
         body > div > header { display: none !important; }
@@ -54,7 +59,8 @@ export default async function PlanPrintPage({
           .print-hide { display: none !important; }
           .print-page { padding: 0 !important; }
           .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
-          .print-page-break { break-before: page; page-break-before: always; }
+          .print-page-break-before { break-before: page; page-break-before: always; }
+          .print-cover { break-after: page; page-break-after: always; }
           html, body { background: white !important; }
         }
       `}</style>
@@ -74,208 +80,120 @@ export default async function PlanPrintPage({
           <PrintButton />
         </div>
 
-        {/* Portada */}
-        <header className="print-avoid-break mb-10 border-b border-ink-faint/50 pb-8">
-          {plan.coverImageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={plan.coverImageUrl}
-              alt=""
-              className="mb-6 w-full h-56 object-cover rounded-[var(--radius-card)]"
+        {/* 1. PORTADA */}
+        <PlanCoverPage plan={plan} anchorId={mainAnchor} isMain />
+
+        {/* 2. ÍNDEX */}
+        <section
+          id="index"
+          className="print-page-break-before print-avoid-break mb-12"
+        >
+          <h2 className="font-serif text-3xl font-semibold mb-6">Índex</h2>
+          <ol className="space-y-4 text-sm leading-relaxed">
+            <TocPlanEntry
+              anchor={mainAnchor}
+              title={plan.title}
+              sections={mainSections}
+              h2s={mainHeadings.map((h) => h.text)}
+              label="Pla principal"
             />
-          )}
-          <h1 className="font-serif text-4xl font-semibold leading-tight">
+            {children.map((child) => {
+              const sections = getPlanSections(child);
+              const h2s = sections.hasBody
+                ? extractH2Headings(child.body).map((h) => h.text)
+                : [];
+              return (
+                <TocPlanEntry
+                  key={child.id}
+                  anchor={`plan-${child.id}`}
+                  title={child.title}
+                  sections={sections}
+                  h2s={h2s}
+                  label="Sub-plan"
+                />
+              );
+            })}
+          </ol>
+        </section>
+
+        {/* 3. CONTINGUT DEL PLAN PRINCIPAL */}
+        <div className="print-page-break-before">
+          <h2 className="font-serif text-3xl font-semibold mb-8">
             {plan.title}
-          </h1>
-          {plan.summary && (
-            <p className="mt-4 text-lg text-ink-soft italic leading-relaxed">
-              {plan.summary}
-            </p>
-          )}
-          <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink-soft">
-            {plan.destination && (
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin className="h-4 w-4" strokeWidth={1.75} />
-                {plan.destination}
-              </span>
-            )}
-            {dateRange && (
-              <span className="inline-flex items-center gap-1.5">
-                <Calendar className="h-4 w-4" strokeWidth={1.75} />
-                {dateRange}
-              </span>
-            )}
-            {budget && (
-              <span className="inline-flex items-center gap-1.5">
-                <Coins className="h-4 w-4" strokeWidth={1.75} />
-                {budget}
-              </span>
-            )}
+          </h2>
+          <PlanContent plan={plan} />
+        </div>
+
+        {/* 4. SUB-PLANS, cadascun en una nova pàgina amb portada pròpia */}
+        {children.map((child) => (
+          <div key={child.id} className="print-page-break-before">
+            <PlanCoverPage
+              plan={child}
+              anchorId={`plan-${child.id}`}
+              isMain={false}
+            />
+            <div className="print-page-break-before">
+              <PlanContent plan={child} />
+            </div>
           </div>
-        </header>
-
-        {/* Cos del plan */}
-        {plan.body.trim() && (
-          <section className="mb-10">
-            <MarkdownBody>{plan.body}</MarkdownBody>
-          </section>
-        )}
-
-        {/* Ruta / Llocs */}
-        {orderedPlaces.length > 0 && (
-          <section className="print-avoid-break mb-10">
-            <h2 className="font-serif text-2xl font-semibold mb-5">
-              Ruta · {orderedPlaces.length}{" "}
-              {orderedPlaces.length === 1 ? "lloc" : "llocs"}
-            </h2>
-            <ol className="space-y-3">
-              {orderedPlaces.map((p, i) => (
-                <li
-                  key={p.id}
-                  className="print-avoid-break flex gap-3 text-sm leading-relaxed"
-                >
-                  <span className="font-serif font-semibold text-peach-deep min-w-[1.5rem]">
-                    {i + 1}.
-                  </span>
-                  <span className="flex-1">
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`}
-                      target="_blank"
-                      rel="noopener"
-                      className="font-semibold text-ink underline decoration-peach decoration-2 underline-offset-[3px] hover:decoration-peach-deep"
-                    >
-                      {p.name}
-                    </a>
-                    {p.country && (
-                      <span className="text-ink-soft"> · {p.country}</span>
-                    )}
-                    {p.arrivalDate && (
-                      <span className="ml-2 text-ink-soft">
-                        ({formatShortDate(p.arrivalDate)})
-                      </span>
-                    )}
-                    {p.notes && (
-                      <span className="block text-ink-soft mt-0.5">
-                        {p.notes}
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
-
-        {/* Checklist */}
-        {plan.checklist.length > 0 && (
-          <section className="print-avoid-break mb-10">
-            <h2 className="font-serif text-2xl font-semibold mb-5">Checklist</h2>
-            <ul className="space-y-1.5 text-sm">
-              {plan.checklist.map((item) => (
-                <li key={item.id} className="flex items-start gap-2.5">
-                  <span
-                    aria-hidden
-                    className="mt-[3px] inline-block h-3.5 w-3.5 border border-ink rounded-sm flex-shrink-0 leading-none text-center"
-                    style={{
-                      fontSize: "10px",
-                      lineHeight: "12px",
-                    }}
-                  >
-                    {item.done ? "✓" : ""}
-                  </span>
-                  <span
-                    className={
-                      item.done
-                        ? "text-ink-soft line-through"
-                        : "text-ink"
-                    }
-                  >
-                    {item.text}
-                    {item.dueDate && (
-                      <span className="text-ink-soft ml-2">
-                        ({formatShortDate(item.dueDate)})
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {/* Despeses */}
-        {plan.expenses.length > 0 && (
-          <section className="print-avoid-break mb-10">
-            <h2 className="font-serif text-2xl font-semibold mb-5">
-              {plan.expenses.some((e) => e.isEstimated)
-                ? "Pressupost"
-                : "Despeses"}
-            </h2>
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-ink-faint/50">
-                {plan.expenses.map((e) => (
-                  <tr key={e.id}>
-                    <td className="py-2 pr-3">
-                      <span className="font-medium">{e.category}</span>
-                      {e.description && (
-                        <span className="text-ink-soft">
-                          {" "}
-                          · {e.description}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 text-right whitespace-nowrap">
-                      {e.isEstimated && (
-                        <span className="text-ink-soft text-xs">~ </span>
-                      )}
-                      {formatMoney(e.amount, e.currency)}
-                    </td>
-                  </tr>
-                ))}
-                <tr className="font-serif font-semibold">
-                  <td className="pt-3">Total</td>
-                  <td className="pt-3 text-right">
-                    {formatMoney(
-                      plan.expenses.reduce((a, e) => a + e.amount, 0),
-                      plan.budgetCurrency ?? "EUR",
-                    )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-        )}
-
-        {/* Sub-plans (només titulars amb dates) */}
-        {children.length > 0 && (
-          <section className="print-avoid-break mb-10">
-            <h2 className="font-serif text-2xl font-semibold mb-5">
-              Sub-plans
-            </h2>
-            <ul className="space-y-2 text-sm">
-              {children.map((c) => {
-                const range = formatDateRange(c.startDate, c.endDate);
-                return (
-                  <li key={c.id} className="flex flex-wrap gap-x-3 gap-y-0.5">
-                    <span className="font-semibold">{c.title}</span>
-                    {c.destination && (
-                      <span className="text-ink-soft">· {c.destination}</span>
-                    )}
-                    {range && (
-                      <span className="text-ink-soft">· {range}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
+        ))}
 
         {/* Peu personal */}
-        <footer className="mt-12 pt-6 border-t border-ink-faint/40 text-center font-hand text-base text-ink-soft -rotate-[0.5deg]">
+        <footer className="mt-16 pt-6 border-t border-ink-faint/40 text-center font-hand text-base text-ink-soft -rotate-[0.5deg]">
           plannings · els nostres plans
         </footer>
       </article>
     </>
+  );
+}
+
+function TocPlanEntry({
+  anchor,
+  title,
+  sections,
+  h2s,
+  label,
+}: {
+  anchor: string;
+  title: string;
+  sections: ReturnType<typeof getPlanSections>;
+  h2s: string[];
+  label: string;
+}) {
+  return (
+    <li>
+      <a
+        href={`#${anchor}`}
+        className="font-serif text-lg font-semibold text-ink hover:text-peach-deep"
+      >
+        <span className="font-hand text-sm text-peach-deep mr-2">{label}</span>
+        {title}
+      </a>
+      {(h2s.length > 0 ||
+        sections.hasPlaces ||
+        sections.hasChecklist ||
+        sections.hasExpenses) && (
+        <ul className="mt-1.5 ml-6 space-y-1 text-ink-soft">
+          {h2s.map((text, i) => (
+            <li key={`h2-${i}`} className="before:content-['·_'] before:text-peach">
+              {text}
+            </li>
+          ))}
+          {sections.hasPlaces && (
+            <li className="before:content-['·_'] before:text-peach">Ruta</li>
+          )}
+          {sections.hasChecklist && (
+            <li className="before:content-['·_'] before:text-peach">
+              Checklist
+            </li>
+          )}
+          {sections.hasExpenses && (
+            <li className="before:content-['·_'] before:text-peach">
+              Pressupost
+            </li>
+          )}
+        </ul>
+      )}
+    </li>
   );
 }
