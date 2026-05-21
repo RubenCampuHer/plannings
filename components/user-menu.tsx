@@ -1,4 +1,5 @@
-import { LogOut } from "lucide-react";
+import Link from "next/link";
+import { LogOut, Settings } from "lucide-react";
 import { signOut } from "@/lib/auth-actions";
 
 export function UserMenu({ email }: { email: string }) {
@@ -19,6 +20,13 @@ export function UserMenu({ email }: { email: string }) {
           Connectat com
         </p>
         <p className="text-sm font-medium text-ink truncate mb-3">{email}</p>
+        <Link
+          href="/settings"
+          className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm text-ink hover:bg-cream-deep/60 transition-colors"
+        >
+          <Settings className="h-4 w-4" strokeWidth={2} />
+          Configuració
+        </Link>
         <form action={signOut}>
           <button
             type="submit"

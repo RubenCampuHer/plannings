@@ -44,9 +44,19 @@ export default async function RootLayout({
           <SiteHeader user={headerUser} />
           <main className="flex-1">{children}</main>
           <footer className="border-t border-ink-faint/40 py-8 mt-16">
-            <div className="mx-auto max-w-6xl px-6 text-sm text-ink-soft flex items-center justify-between">
+            <div className="mx-auto max-w-6xl px-6 text-sm text-ink-soft flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="font-hand text-lg text-ink-soft">amb carinyo · {new Date().getFullYear()}</span>
-              <span className="text-xs">v0.1 · diari de plans</span>
+              <nav className="flex items-center gap-4 text-xs">
+                <a href="/settings" className="hover:text-ink transition-colors">
+                  Configuració
+                </a>
+                <a href="/legal/privacy" className="hover:text-ink transition-colors">
+                  Privacitat
+                </a>
+                <a href="/legal/terms" className="hover:text-ink transition-colors">
+                  Condicions
+                </a>
+              </nav>
             </div>
           </footer>
         </div>
