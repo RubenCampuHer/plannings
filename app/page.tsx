@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { Calendar, MapPin } from "lucide-react";
 import { HomeCalendar } from "@/components/home-calendar";
 import { PlanFilters } from "@/components/plan-filters";
@@ -49,6 +51,16 @@ export default async function HomePage({
 
   const calendarPlans = allPlans ?? plans;
   const featured = nowPlans.length === 1 ? nowPlans[0] : null;
+
+  // Onboarding: si l'usuari no té cap pla i encara no ha passat per /onboarding,
+  // l'enviem allà. La cookie es marca quan acaba l'onboarding. Només dispara
+  // sense filtres actius i quan tot el calendari està buit (= cap pla visible).
+  if (!hasFilter && calendarPlans.length === 0) {
+    const cookieStore = await cookies();
+    if (!cookieStore.get("plannings_onboarded")) {
+      redirect("/onboarding");
+    }
+  }
   // El featured també apareix al grid (no es filtra): així un usuari que fa scroll
   // continua veient tots els plans, i el featured és només un realç visual a dalt.
 

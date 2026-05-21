@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Sparkles, Mail, Lock, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { signInWithPassword, signUpWithPassword } from "@/lib/auth-actions";
+import {
+  signInWithGoogle,
+  signInWithPassword,
+  signUpWithPassword,
+} from "@/lib/auth-actions";
 
 export const metadata: Metadata = {
   title: "Entrar · Plannings",
@@ -13,6 +17,7 @@ type Mode = "signin" | "signup";
 const ERROR_MESSAGES: Record<string, string> = {
   missing_fields: "Posa el correu i la contrasenya.",
   short_password: "La contrasenya ha de tenir 6 caràcters com a mínim.",
+  oauth_failed: "No s'ha pogut iniciar l'entrada amb Google. Torna-ho a provar.",
 };
 
 function translateError(raw: string | undefined): string | null {
@@ -21,8 +26,37 @@ function translateError(raw: string | undefined): string | null {
   // Errors comuns de Supabase en anglès, els traduïm si toca.
   if (/invalid login credentials/i.test(raw)) return "Correu o contrasenya incorrectes.";
   if (/already registered/i.test(raw)) return "Ja existeix un compte amb aquest correu. Entra-hi.";
-  if (/no està autoritzat/i.test(raw)) return raw; // missatge del trigger ja en català
+  if (/no està convidat/i.test(raw)) return raw; // missatge del trigger en català
+  if (/no està autoritzat/i.test(raw)) return raw;
   return raw;
+}
+
+function GoogleIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 48 48"
+      className="h-4 w-4"
+      aria-hidden
+    >
+      <path
+        fill="#FFC107"
+        d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917"
+      />
+      <path
+        fill="#FF3D00"
+        d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917"
+      />
+    </svg>
+  );
 }
 
 export default async function LoginPage({
@@ -50,8 +84,8 @@ export default async function LoginPage({
           </h1>
           <p className="text-ink-soft mt-2 text-sm">
             {isSignin
-              ? "El vostre raconet privat de plans."
-              : "Només els correus a la whitelist poden registrar-se."}
+              ? "El teu raconet de plans i records."
+              : "Estem en beta — necessites una invitació per registrar-te."}
           </p>
         </div>
 
@@ -91,6 +125,23 @@ export default async function LoginPage({
           </div>
         )}
 
+        <form action={signInWithGoogle} className="mb-4">
+          <Button
+            type="submit"
+            variant="outline"
+            className="w-full h-12 flex items-center justify-center gap-2"
+          >
+            <GoogleIcon />
+            Continua amb Google
+          </Button>
+        </form>
+
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex-1 h-px bg-ink-faint/40" />
+          <span className="text-xs text-ink-soft uppercase tracking-wide">o amb correu</span>
+          <div className="flex-1 h-px bg-ink-faint/40" />
+        </div>
+
         <form
           action={isSignin ? signInWithPassword : signUpWithPassword}
           className="space-y-4"
@@ -122,9 +173,6 @@ export default async function LoginPage({
           <Button type="submit" variant="primary" className="w-full">
             {isSignin ? "Entra" : "Crea el compte"}
           </Button>
-          <p className="text-xs text-ink-soft text-center pt-2">
-            Només dues persones podem entrar aquí. Si no ets vosaltres, no et deixarà passar.
-          </p>
         </form>
       </div>
     </div>
