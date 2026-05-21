@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Sparkles, Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ function NavLink({
 }
 
 export function SiteHeader({ user }: { user: { email: string } | null }) {
+  const t = useTranslations("header");
   const pathname = usePathname();
   // A `/plans/[id]` no marquem cap actiu: des del header no sabem si el plan
   // és arxivat o no, i marcar "Plans" sempre seria mentida per als arxivats.
@@ -64,12 +66,12 @@ export function SiteHeader({ user }: { user: { email: string } | null }) {
         <nav className="flex items-center gap-0.5 sm:gap-1">
           {user && (
             <>
-              <NavLink href="/" label="Plans" active={isPlans} />
-              <NavLink href="/archive" label="Arxiu" active={isArchive} />
-              <Link href="/plans/new" className="ml-1 sm:ml-2 inline-flex" aria-label="Nou plan">
+              <NavLink href="/" label={t("plans")} active={isPlans} />
+              <NavLink href="/archive" label={t("archive")} active={isArchive} />
+              <Link href="/plans/new" className="ml-1 sm:ml-2 inline-flex" aria-label={t("newPlan")}>
                 <Button size="sm">
                   <Plus className="h-4 w-4" strokeWidth={2.5} />
-                  <span className="hidden sm:inline">Nou plan</span>
+                  <span className="hidden sm:inline">{t("newPlan")}</span>
                 </Button>
               </Link>
               <UserMenu email={user.email} />

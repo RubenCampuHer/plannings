@@ -1,0 +1,87 @@
+{
+  "header": {
+    "plans": "Plans",
+    "archive": "Archive",
+    "newPlan": "New plan"
+  },
+  "userMenu": {
+    "connectedAs": "Signed in as",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "language": "Language"
+  },
+  "login": {
+    "signinTitle": "Sign in to",
+    "signupTitle": "Create account on",
+    "tagline": "Your little corner for plans and memories.",
+    "betaTagline": "We're in beta — you need an invitation to sign up.",
+    "tabSignin": "Sign in",
+    "tabSignup": "Sign up",
+    "google": "Continue with Google",
+    "orWithEmail": "or with email",
+    "emailPlaceholder": "your-email@example.com",
+    "passwordSigninPlaceholder": "Password",
+    "passwordSignupPlaceholder": "At least 6 characters",
+    "invitePlaceholder": "Invitation code",
+    "submitSignin": "Sign in",
+    "submitSignup": "Create account",
+    "confirmEmailNotice": "We sent an email to {email} to confirm your account. Click the link and then come back here to sign in."
+  },
+  "home": {
+    "greeting": "hello",
+    "intro": "What are you planning today?"
+  },
+  "onboarding": {
+    "greeting": "hello, welcome",
+    "title": "Let's get started with plannings",
+    "intro": "A little corner to write down your plans — trips, weekends, special days — and come back to them whenever. How do you want to start?",
+    "demoCta": "Create a demo plan",
+    "demoHelper": "We'll make a sample plan with the main pieces (text, checklist, map) so you can play with it and see how it works.",
+    "or": "or",
+    "emptyCta": "Start empty",
+    "emptyHelper": "Go straight to the main screen and create your first plan."
+  },
+  "members": {
+    "buttonLabel": "Members ({count})",
+    "modalTitle": "Members and sharing",
+    "tabMembers": "Members ({count})",
+    "tabShare": "Share to duplicate",
+    "whoHasAccess": "Who has access",
+    "creator": "Creator",
+    "leave": "Leave",
+    "remove": "Remove",
+    "pendingInvites": "Pending invitations",
+    "copyLink": "Copy link",
+    "copied": "Copied",
+    "inviteByEmail": "Invite someone by email",
+    "inviteSubmit": "Invite",
+    "inviteHint": "An invitation link will be generated. You send it (WhatsApp, email...) and the recipient clicks to accept. Expires in 7 days.",
+    "shareIntro": "Generate a link that anyone (signed in to plannings) can use to keep their own copy of this plan. The copy is independent: what that person does doesn't affect your plan.",
+    "generateShare": "Generate share link",
+    "regenerate": "New",
+    "revoke": "Revoke"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Your account and your plans.",
+    "profile": "Profile",
+    "email": "Email",
+    "provider": "Sign-in method",
+    "providerGoogle": "Google",
+    "providerEmail": "Email and password",
+    "ownedPlans": "Owned plans ({count})",
+    "ownedEmpty": "You haven't created any yet.",
+    "sharedPlans": "Shared plans ({count})",
+    "sharedEmpty": "Nobody has invited you to a plan yet.",
+    "dangerZone": "Danger zone",
+    "deleteTitle": "Delete account",
+    "deleteWarning": "This can't be undone. We'll delete plans where you're the only member. Plans you share with others will keep going with the next co-editor as new owner.",
+    "deleteCta": "Delete my account"
+  },
+  "footer": {
+    "tagline": "made with care",
+    "settings": "Settings",
+    "privacy": "Privacy",
+    "terms": "Terms"
+  }
+}

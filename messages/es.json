@@ -1,0 +1,87 @@
+{
+  "header": {
+    "plans": "Planes",
+    "archive": "Archivo",
+    "newPlan": "Nuevo plan"
+  },
+  "userMenu": {
+    "connectedAs": "Conectado como",
+    "settings": "Configuración",
+    "signOut": "Salir",
+    "language": "Idioma"
+  },
+  "login": {
+    "signinTitle": "Entra en",
+    "signupTitle": "Crea cuenta en",
+    "tagline": "Tu rincón de planes y recuerdos.",
+    "betaTagline": "Estamos en beta — necesitas una invitación para registrarte.",
+    "tabSignin": "Entrar",
+    "tabSignup": "Crear cuenta",
+    "google": "Continuar con Google",
+    "orWithEmail": "o con correo",
+    "emailPlaceholder": "tu-correo@ejemplo.com",
+    "passwordSigninPlaceholder": "Contraseña",
+    "passwordSignupPlaceholder": "Mínimo 6 caracteres",
+    "invitePlaceholder": "Código de invitación",
+    "submitSignin": "Entrar",
+    "submitSignup": "Crear cuenta",
+    "confirmEmailNotice": "Te hemos enviado un correo a {email} para confirmar la cuenta. Haz click en el enlace y luego vuelve aquí para entrar."
+  },
+  "home": {
+    "greeting": "hola",
+    "intro": "¿Qué planeas hoy?"
+  },
+  "onboarding": {
+    "greeting": "hola, bienvenido/a",
+    "title": "Empecemos con plannings",
+    "intro": "Un rincón para escribir tus planes —viajes, fines de semana, días especiales— y volver cuando quieras. ¿Cómo quieres empezar?",
+    "demoCta": "Crea un plan de demostración",
+    "demoHelper": "Te haremos un plan de ejemplo con las piezas principales (texto, checklist, mapa) para que lo toques y veas cómo funciona.",
+    "or": "o",
+    "emptyCta": "Empieza vacío",
+    "emptyHelper": "Ve directamente a la pantalla principal y crea tu primer plan."
+  },
+  "members": {
+    "buttonLabel": "Miembros ({count})",
+    "modalTitle": "Miembros y compartir",
+    "tabMembers": "Miembros ({count})",
+    "tabShare": "Compartir para duplicar",
+    "whoHasAccess": "Quién tiene acceso",
+    "creator": "Creador",
+    "leave": "Salir",
+    "remove": "Quitar",
+    "pendingInvites": "Invitaciones pendientes",
+    "copyLink": "Copiar link",
+    "copied": "Copiado",
+    "inviteByEmail": "Invitar a alguien por email",
+    "inviteSubmit": "Invitar",
+    "inviteHint": "Se generará un enlace. Tú lo envías (WhatsApp, email...) y la persona hace click para aceptar. Caduca en 7 días.",
+    "shareIntro": "Genera un enlace que cualquier persona (autenticada en plannings) puede usar para quedarse una copia de este plan en su cuenta. La copia es independiente: lo que haga esa persona no afecta a tu plan.",
+    "generateShare": "Generar enlace para compartir",
+    "regenerate": "Nuevo",
+    "revoke": "Revocar"
+  },
+  "settings": {
+    "title": "Configuración",
+    "subtitle": "Tu cuenta y tus planes.",
+    "profile": "Perfil",
+    "email": "Correo electrónico",
+    "provider": "Método de entrada",
+    "providerGoogle": "Google",
+    "providerEmail": "Correo y contraseña",
+    "ownedPlans": "Planes propios ({count})",
+    "ownedEmpty": "Aún no has creado ninguno.",
+    "sharedPlans": "Planes compartidos ({count})",
+    "sharedEmpty": "Nadie te ha invitado a ningún plan.",
+    "dangerZone": "Zona peligrosa",
+    "deleteTitle": "Eliminar cuenta",
+    "deleteWarning": "Esta acción no se puede deshacer. Eliminaremos los planes en los que solo estás tú. Los planes que compartes seguirán vivos con el primer co-editor como nuevo propietario.",
+    "deleteCta": "Eliminar mi cuenta"
+  },
+  "footer": {
+    "tagline": "con cariño",
+    "settings": "Configuración",
+    "privacy": "Privacidad",
+    "terms": "Condiciones"
+  }
+}

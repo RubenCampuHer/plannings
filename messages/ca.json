@@ -1,0 +1,87 @@
+{
+  "header": {
+    "plans": "Plans",
+    "archive": "Arxiu",
+    "newPlan": "Nou pla"
+  },
+  "userMenu": {
+    "connectedAs": "Connectat com",
+    "settings": "Configuració",
+    "signOut": "Sortir",
+    "language": "Idioma"
+  },
+  "login": {
+    "signinTitle": "Entra a",
+    "signupTitle": "Crea compte a",
+    "tagline": "El teu raconet de plans i records.",
+    "betaTagline": "Estem en beta — necessites una invitació per registrar-te.",
+    "tabSignin": "Entra",
+    "tabSignup": "Crea compte",
+    "google": "Continua amb Google",
+    "orWithEmail": "o amb correu",
+    "emailPlaceholder": "el-teu-correu@exemple.com",
+    "passwordSigninPlaceholder": "Contrasenya",
+    "passwordSignupPlaceholder": "Mínim 6 caràcters",
+    "invitePlaceholder": "Codi d'invitació",
+    "submitSignin": "Entra",
+    "submitSignup": "Crea el compte",
+    "confirmEmailNotice": "T'hem enviat un correu a {email} per confirmar el compte. Clica l'enllaç i després torna aquí a entrar."
+  },
+  "home": {
+    "greeting": "hola, vosaltres dos",
+    "intro": "Què planejeu avui?"
+  },
+  "onboarding": {
+    "greeting": "hola, benvingut/da",
+    "title": "Comencem amb plannings",
+    "intro": "Un raconet per escriure els teus plans —viatges, caps de setmana, dies especials— i tornar-hi quan vulguis. Com vols començar?",
+    "demoCta": "Crea un plan de demostració",
+    "demoHelper": "Et farem un plan d'exemple amb les peces principals (text, checklist, mapa) perquè el toquis i vegis com funciona.",
+    "or": "o",
+    "emptyCta": "Comença buit",
+    "emptyHelper": "Ves directament a la pantalla principal i crea el primer plan tu mateix."
+  },
+  "members": {
+    "buttonLabel": "Membres ({count})",
+    "modalTitle": "Membres i compartir",
+    "tabMembers": "Membres ({count})",
+    "tabShare": "Compartir per duplicar",
+    "whoHasAccess": "Qui té accés",
+    "creator": "Creador",
+    "leave": "Sortir",
+    "remove": "Treure",
+    "pendingInvites": "Invitacions pendents",
+    "copyLink": "Copiar link",
+    "copied": "Copiat",
+    "inviteByEmail": "Convidar algú per email",
+    "inviteSubmit": "Convidar",
+    "inviteHint": "Es generarà un enllaç. L'envies tu (WhatsApp, email...) i la persona el clica per acceptar. Expira en 7 dies.",
+    "shareIntro": "Genera un enllaç que qualsevol persona (autenticada a plannings) pot fer servir per quedar-se una còpia d'aquest pla al seu compte. La còpia és independent: el que faci aquella persona no afecta el teu pla.",
+    "generateShare": "Generar enllaç per compartir",
+    "regenerate": "Nou",
+    "revoke": "Revocar"
+  },
+  "settings": {
+    "title": "Configuració",
+    "subtitle": "El teu compte i els teus plans.",
+    "profile": "Perfil",
+    "email": "Correu electrònic",
+    "provider": "Mètode d'entrada",
+    "providerGoogle": "Google",
+    "providerEmail": "Correu i contrasenya",
+    "ownedPlans": "Plans propis ({count})",
+    "ownedEmpty": "Encara no n'has creat cap.",
+    "sharedPlans": "Plans compartits ({count})",
+    "sharedEmpty": "No t'ha convidat ningu a cap pla.",
+    "dangerZone": "Zona perillosa",
+    "deleteTitle": "Esborrar el compte",
+    "deleteWarning": "Aquesta acció no es pot desfer. Esborrarem els plans on només hi ets tu. Els plans que comparteixes seguiran vius amb el primer co-editor com a propietari nou.",
+    "deleteCta": "Esborrar el meu compte"
+  },
+  "footer": {
+    "tagline": "amb carinyo",
+    "settings": "Configuració",
+    "privacy": "Privacitat",
+    "terms": "Condicions"
+  }
+}
