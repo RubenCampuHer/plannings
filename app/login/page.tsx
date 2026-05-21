@@ -17,6 +17,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   missing_fields: "Posa el correu i la contrasenya.",
   short_password: "La contrasenya ha de tenir 6 caràcters com a mínim.",
   oauth_failed: "No s'ha pogut iniciar l'entrada amb Google. Torna-ho a provar.",
+  missing_code: "No s'ha pogut completar l'entrada amb Google.",
 };
 
 function translateError(raw: string | undefined): string | null {
@@ -27,6 +28,11 @@ function translateError(raw: string | undefined): string | null {
   if (/already registered/i.test(raw)) return "Ja existeix un compte amb aquest correu. Entra-hi.";
   if (/no està convidat/i.test(raw)) return raw; // missatge del trigger en català
   if (/no està autoritzat/i.test(raw)) return raw;
+  // OAuth: signup d'un email sense invitació passa pel trigger i Supabase ho
+  // empaqueta com a "Database error saving new user".
+  if (/database error saving new user/i.test(raw)) {
+    return "Aquest correu no està convidat a la beta de plannings.";
+  }
   return raw;
 }
 
