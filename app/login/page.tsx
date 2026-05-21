@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Sparkles, Mail, Lock, Info } from "lucide-react";
+import { Sparkles, Mail, Lock, Info, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   signInWithPassword,
@@ -18,6 +18,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   short_password: "La contrasenya ha de tenir 6 caràcters com a mínim.",
   oauth_failed: "No s'ha pogut iniciar l'entrada amb Google. Torna-ho a provar.",
   missing_code: "No s'ha pogut completar l'entrada amb Google.",
+  missing_invite_code: "Necessites un codi d'invitació per registrar-te a la beta.",
+  invalid_invite_code: "Aquest codi d'invitació no és vàlid.",
+  server_misconfigured: "Hi ha un problema al servidor. Avisa al Ruben.",
+  beta_claim_failed: "No s'ha pogut validar la invitació. Torna-ho a provar.",
 };
 
 function translateError(raw: string | undefined): string | null {
@@ -172,6 +176,19 @@ export default async function LoginPage({
               className="w-full h-12 pl-10 pr-4 rounded-full bg-cream-soft border border-ink-faint/50 text-ink placeholder:text-ink-soft/70 focus:outline-none focus:border-peach focus:ring-4 focus:ring-peach/15 transition-all"
             />
           </div>
+          {!isSignin && (
+            <div className="relative">
+              <Ticket className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-soft" strokeWidth={2} />
+              <input
+                type="text"
+                name="inviteCode"
+                required
+                autoComplete="off"
+                placeholder="Codi d'invitació"
+                className="w-full h-12 pl-10 pr-4 rounded-full bg-cream-soft border border-ink-faint/50 text-ink placeholder:text-ink-soft/70 focus:outline-none focus:border-peach focus:ring-4 focus:ring-peach/15 transition-all"
+              />
+            </div>
+          )}
           <Button type="submit" variant="primary" className="w-full">
             {isSignin ? "Entra" : "Crea el compte"}
           </Button>
