@@ -80,6 +80,12 @@ export default async function PlanDetailPage({
     headers(),
   ]);
   const { data: { user: currentUser } } = await supabaseForAuth.auth.getUser();
+  const { data: shareRow } = await supabaseForAuth
+    .from("plans")
+    .select("share_token")
+    .eq("id", plan.id)
+    .single();
+  const shareToken: string | null = shareRow?.share_token ?? null;
   const host = hdr.get("x-forwarded-host") ?? hdr.get("host") ?? "";
   const proto = hdr.get("x-forwarded-proto") ?? "https";
   const baseUrl = host ? `${proto}://${host}` : "";
@@ -141,6 +147,7 @@ export default async function PlanDetailPage({
                   members={members}
                   invitations={invitations}
                   baseUrl={baseUrl}
+                  shareToken={shareToken}
                 />
               )
             }

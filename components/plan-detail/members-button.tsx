@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Users, X, Copy, Check, UserMinus, LogOut, Loader2 } from "lucide-react";
+import {
+  Users,
+  X,
+  Copy,
+  Check,
+  UserMinus,
+  LogOut,
+  Loader2,
+  Link2,
+  RefreshCw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   inviteToPlan,
@@ -9,7 +19,10 @@ import {
   removeMember,
   leavePlan,
 } from "@/lib/invitation-actions";
+import { generateShareToken, revokeShareToken } from "@/lib/clone-actions";
 import type { PlanInvitation, PlanMember } from "@/lib/types";
+
+type Tab = "members" | "share";
 
 type Props = {
   planId: string;
@@ -17,6 +30,7 @@ type Props = {
   members: PlanMember[];
   invitations: PlanInvitation[];
   baseUrl: string;
+  shareToken: string | null;
 };
 
 export function MembersButton({
@@ -25,12 +39,50 @@ export function MembersButton({
   members,
   invitations,
   baseUrl,
+  shareToken,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>("members");
   const [email, setEmail] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const cloneLink = shareToken ? `${baseUrl}/clone/${shareToken}` : null;
+
+  function handleGenerateShare() {
+    const fd = new FormData();
+    fd.set("planId", planId);
+    startTransition(async () => {
+      try {
+        await generateShareToken(fd);
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : "Error desconegut.");
+      }
+    });
+  }
+
+  function handleRevokeShare() {
+    if (!window.confirm("Revocar l'enllaç fa que deixi de funcionar. Continuar?")) {
+      return;
+    }
+    const fd = new FormData();
+    fd.set("planId", planId);
+    startTransition(async () => {
+      try {
+        await revokeShareToken(fd);
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : "Error desconegut.");
+      }
+    });
+  }
+
+  function handleCopyShare() {
+    if (!cloneLink) return;
+    navigator.clipboard.writeText(cloneLink);
+    setCopied("share");
+    setTimeout(() => setCopied(null), 1500);
+  }
 
   // Tanca amb Esc.
   useEffect(() => {
@@ -132,7 +184,7 @@ export function MembersButton({
           >
             <header className="flex items-center justify-between px-5 py-4 border-b border-ink-faint/40">
               <h2 className="font-serif text-lg font-semibold text-ink">
-                Membres del pla
+                Membres i compartir
               </h2>
               <button
                 onClick={() => setOpen(false)}
@@ -143,7 +195,33 @@ export function MembersButton({
               </button>
             </header>
 
+            {/* Tabs */}
+            <div className="grid grid-cols-2 p-1 m-5 mb-0 rounded-full bg-cream-soft border border-ink-faint/40 text-xs">
+              <button
+                onClick={() => setTab("members")}
+                className={`py-1.5 rounded-full font-medium transition-colors ${
+                  tab === "members"
+                    ? "bg-white text-ink shadow-sm"
+                    : "text-ink-soft hover:text-ink"
+                }`}
+              >
+                Membres ({members.length})
+              </button>
+              <button
+                onClick={() => setTab("share")}
+                className={`py-1.5 rounded-full font-medium transition-colors ${
+                  tab === "share"
+                    ? "bg-white text-ink shadow-sm"
+                    : "text-ink-soft hover:text-ink"
+                }`}
+              >
+                Compartir per duplicar
+              </button>
+            </div>
+
             <div className="px-5 py-4 space-y-5">
+              {tab === "members" && (
+              <>
               {/* Llista de membres */}
               <section>
                 <h3 className="text-xs uppercase tracking-wide text-ink-soft mb-2">
@@ -268,6 +346,88 @@ export function MembersButton({
                   persona el clica per acceptar. Expira en 7 dies.
                 </p>
               </section>
+              </>
+              )}
+
+              {tab === "share" && (
+                <section>
+                  <p className="text-sm text-ink-soft mb-3">
+                    Genera un enllaç que qualsevol persona (autenticada a plannings)
+                    pot fer servir per <strong>quedar-se una còpia</strong> d'aquest pla
+                    al seu compte. La còpia és independent: el que faci aquella
+                    persona no afecta el teu pla.
+                  </p>
+                  {cloneLink ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 bg-cream-soft/60 rounded-md px-3 py-2">
+                        <Link2 className="h-4 w-4 text-ink-soft shrink-0" strokeWidth={2} />
+                        <input
+                          readOnly
+                          value={cloneLink}
+                          onClick={(e) => e.currentTarget.select()}
+                          className="flex-1 min-w-0 bg-transparent text-xs text-ink outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={handleCopyShare}
+                          className="flex-1"
+                          disabled={isPending}
+                        >
+                          {copied === "share" ? (
+                            <>
+                              <Check className="h-4 w-4" strokeWidth={2} />
+                              Copiat!
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-4 w-4" strokeWidth={2} />
+                              Copiar enllaç
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleGenerateShare}
+                          disabled={isPending}
+                          title="Generar un enllaç nou (l'antic deixarà de funcionar)"
+                        >
+                          <RefreshCw className="h-4 w-4" strokeWidth={2} />
+                          Nou
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleRevokeShare}
+                          disabled={isPending}
+                          title="Revocar — l'enllaç deixarà de funcionar"
+                        >
+                          <X className="h-4 w-4" strokeWidth={2} />
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      onClick={handleGenerateShare}
+                      disabled={isPending}
+                      className="w-full"
+                    >
+                      {isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+                      ) : (
+                        <>
+                          <Link2 className="h-4 w-4" strokeWidth={2} />
+                          Generar enllaç per compartir
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </section>
+              )}
 
               {errorMsg && (
                 <div className="rounded-md border border-peach-deep/40 bg-peach-soft/40 px-3 py-2 text-sm text-ink">
