@@ -9,20 +9,31 @@ function parseCredentials(formData: FormData) {
   return { email, password };
 }
 
+// Permet que /login?next=/invite/xxx torni allà després del signin/signup,
+// però només a paths interns (evitem open redirect a dominis externs).
+function safeNext(raw: unknown): string {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (s.startsWith("/") && !s.startsWith("//")) return s;
+  return "/";
+}
+
 export async function signInWithPassword(formData: FormData): Promise<void> {
   const { email, password } = parseCredentials(formData);
+  const next = safeNext(formData.get("next"));
   if (!email || !password) {
-    redirect("/login?mode=signin&error=missing_fields");
+    redirect(`/login?mode=signin&error=missing_fields&next=${encodeURIComponent(next)}`);
   }
 
   const supabase = await createSupabaseServer();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?mode=signin&error=${encodeURIComponent(error.message)}`);
+    redirect(
+      `/login?mode=signin&error=${encodeURIComponent(error.message)}&next=${encodeURIComponent(next)}`,
+    );
   }
 
-  redirect("/");
+  redirect(next);
 }
 
 export async function signUpWithPassword(formData: FormData): Promise<void> {
@@ -84,7 +95,7 @@ export async function signUpWithPassword(formData: FormData): Promise<void> {
     redirect(`/login?mode=signin&confirm=${encodeURIComponent(email)}`);
   }
 
-  redirect("/");
+  redirect(safeNext(formData.get("next")));
 }
 
 export async function signOut(): Promise<void> {

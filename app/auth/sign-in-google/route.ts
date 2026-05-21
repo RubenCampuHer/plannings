@@ -5,13 +5,16 @@ import { createSupabaseServer } from "@/lib/supabase-server";
 // Cal fer-ho en un route handler (no en un server action) perquè
 // el redirect a la URL externa d'autorització de Google es respecti.
 export async function GET(request: NextRequest) {
-  const { origin } = new URL(request.url);
+  const { origin, searchParams } = new URL(request.url);
+  const rawNext = searchParams.get("next") ?? "";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+
   const supabase = await createSupabaseServer();
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${origin}/auth/callback`,
+      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 

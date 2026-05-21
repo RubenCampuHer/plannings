@@ -10,9 +10,16 @@ type Props = {
   planId: string;
   planTitle: string;
   isArchived: boolean;
+  /** Botó "Membres" injectat des del servidor (necessita auth + data). */
+  membersSlot?: React.ReactNode;
 };
 
-export function PlanActionsBar({ planId, planTitle, isArchived }: Props) {
+export function PlanActionsBar({
+  planId,
+  planTitle,
+  isArchived,
+  membersSlot,
+}: Props) {
   const [isPending, startTransition] = useTransition();
 
   function handleArchive() {
@@ -39,6 +46,7 @@ export function PlanActionsBar({ planId, planTitle, isArchived }: Props) {
   // a sm+ es queda alineat a la dreta com abans.
   return (
     <span className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center gap-2 mt-1 sm:mt-0">
+      {membersSlot}
       <Button
         variant="ghost"
         size="sm"

@@ -71,12 +71,15 @@ function GoogleIcon() {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; error?: string; confirm?: string }>;
+  searchParams: Promise<{ mode?: string; error?: string; confirm?: string; next?: string }>;
 }) {
   const sp = await searchParams;
   const mode: Mode = sp.mode === "signup" ? "signup" : "signin";
   const errorMsg = translateError(sp.error);
   const confirmEmail = sp.confirm;
+  // Sanititzem el next: només paths interns.
+  const rawNext = typeof sp.next === "string" ? sp.next : "";
+  const nextPath = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   const isSignin = mode === "signin";
 
@@ -135,7 +138,7 @@ export default async function LoginPage({
         )}
 
         <a
-          href="/auth/sign-in-google"
+          href={`/auth/sign-in-google?next=${encodeURIComponent(nextPath)}`}
           className="mb-4 w-full h-12 inline-flex items-center justify-center gap-2 rounded-[var(--radius-button)] bg-cream/60 text-ink border border-ink-faint hover:bg-cream-deep/60 font-medium text-sm transition-all"
         >
           <GoogleIcon />
@@ -152,6 +155,7 @@ export default async function LoginPage({
           action={isSignin ? signInWithPassword : signUpWithPassword}
           className="space-y-4"
         >
+          <input type="hidden" name="next" value={nextPath} />
           <div className="relative">
             <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-soft" strokeWidth={2} />
             <input

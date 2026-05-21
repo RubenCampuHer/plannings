@@ -55,6 +55,23 @@ export type PlanRef = {
   title: string;
 };
 
+/** Membre d'un pla (qui hi té accés). */
+export type PlanMember = {
+  userId: string;
+  email: string;
+  isOwner: boolean;
+  joinedAt: string;
+};
+
+/** Invitation a un pla pendent d'acceptar. */
+export type PlanInvitation = {
+  id: string;
+  email: string;
+  token: string;
+  expiresAt: string;
+  createdAt: string;
+};
+
 export type Plan = {
   id: string;
   title: string;

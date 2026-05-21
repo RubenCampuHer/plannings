@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { MapPin, Calendar, Coins } from "lucide-react";
 import { PlanActionsBar } from "@/components/plan-detail/plan-actions-bar";
+import { MembersButton } from "@/components/plan-detail/members-button";
+import {
+  getPlanMembers,
+  getPendingInvitations,
+} from "@/lib/invitation-actions";
+import { createSupabaseServer } from "@/lib/supabase-server";
 import { CoverHero } from "@/components/plan-detail/cover-hero";
 import { MapSection } from "@/components/plan-detail/map-section";
 import { MarkdownBody } from "@/components/plan-detail/markdown-body";
@@ -64,6 +71,18 @@ export default async function PlanDetailPage({
   const tocHeadings = extractH2Headings(plan.body);
   const showToc = tocHeadings.length >= 3;
   const children = await getChildPlanRefs(plan.id);
+
+  // Membres + invitacions per a la modal "Membres".
+  const [members, invitations, supabaseForAuth, hdr] = await Promise.all([
+    getPlanMembers(plan.id),
+    getPendingInvitations(plan.id),
+    createSupabaseServer(),
+    headers(),
+  ]);
+  const { data: { user: currentUser } } = await supabaseForAuth.auth.getUser();
+  const host = hdr.get("x-forwarded-host") ?? hdr.get("host") ?? "";
+  const proto = hdr.get("x-forwarded-proto") ?? "https";
+  const baseUrl = host ? `${proto}://${host}` : "";
   // Card de sub-plans visible si ja en té, o si és un viatge llarg (deep) on
   // sol tenir sentit afegir-ne.
   const showSubPlans = children.length > 0 || plan.type === "deep";
@@ -114,6 +133,17 @@ export default async function PlanDetailPage({
             planId={plan.id}
             planTitle={plan.title}
             isArchived={plan.status === "archived"}
+            membersSlot={
+              currentUser && (
+                <MembersButton
+                  planId={plan.id}
+                  currentUserId={currentUser.id}
+                  members={members}
+                  invitations={invitations}
+                  baseUrl={baseUrl}
+                />
+              )
+            }
           />
         </div>
       </section>
