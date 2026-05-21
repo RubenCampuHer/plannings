@@ -417,6 +417,8 @@ export async function createPlansFromAnalysis(
   placesFailed: string[];
 }> {
   const supabase = await createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Cal estar autenticat per importar plans.");
   const now = new Date().toISOString();
   const takenSlugs = new Set<string>();
 
@@ -436,10 +438,18 @@ export async function createPlansFromAnalysis(
     budget_total: null,
     budget_currency: null,
     parent_plan_id: null,
+    owner_id: user.id,
     created_at: now,
     updated_at: now,
   });
   if (parentError) throw new Error(`Crear pare: ${parentError.message}`);
+
+  const { error: parentMemberError } = await supabase
+    .from("plan_members")
+    .insert({ plan_id: parentId, user_id: user.id });
+  if (parentMemberError) {
+    throw new Error(`Afegir creator a pare: ${parentMemberError.message}`);
+  }
 
   // 2) Checklist del pare.
   if (analysis.parent.checklist.length > 0) {
@@ -494,11 +504,19 @@ export async function createPlansFromAnalysis(
       budget_total: null,
       budget_currency: null,
       parent_plan_id: parentId,
+      owner_id: user.id,
       created_at: now,
       updated_at: now,
     });
     if (childError) {
       throw new Error(`Crear fill ${child.title}: ${childError.message}`);
+    }
+
+    const { error: childMemberError } = await supabase
+      .from("plan_members")
+      .insert({ plan_id: childId, user_id: user.id });
+    if (childMemberError) {
+      throw new Error(`Afegir creator a fill ${child.title}: ${childMemberError.message}`);
     }
     createdChildren += 1;
 

@@ -544,6 +544,10 @@ async function executeAddSubplan(
   }
 
   const supabase = await createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, message: "Cal estar autenticat per crear un sub-plan." };
+  }
   const base = slugify(title);
   const id = await uniqueSlug(supabase, base);
   const now = new Date().toISOString();
@@ -564,11 +568,19 @@ async function executeAddSubplan(
     summary,
     body: `## La idea\n\n${summary}\n\n## Pendents\n\n- Completar aquest sub-plan`,
     parent_plan_id: parentPlanId,
+    owner_id: user.id,
     created_at: now,
     updated_at: now,
   });
   if (error) {
     return { success: false, message: `Error creant sub-plan: ${error.message}` };
+  }
+
+  const { error: memberError } = await supabase
+    .from("plan_members")
+    .insert({ plan_id: id, user_id: user.id });
+  if (memberError) {
+    return { success: false, message: `Error afegint creator a sub-plan: ${memberError.message}` };
   }
   return {
     success: true,

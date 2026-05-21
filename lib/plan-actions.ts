@@ -236,13 +236,22 @@ export async function createPlan(formData: FormData): Promise<void> {
   const now = new Date().toISOString();
 
   const supabase = await createSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Cal estar autenticat per crear un plan.");
+
   const { error } = await supabase.from("plans").insert({
     id,
     ...fields,
+    owner_id: user.id,
     created_at: now,
     updated_at: now,
   });
   if (error) throw new Error(`Crear plan: ${error.message}`);
+
+  const { error: memberError } = await supabase
+    .from("plan_members")
+    .insert({ plan_id: id, user_id: user.id });
+  if (memberError) throw new Error(`Afegir creator com a member: ${memberError.message}`);
 
   // Checklist primer (instantani). Si falla no anul·lem el create — el plan
   // ja existeix i l'usuari pot afegir els items a mà.
