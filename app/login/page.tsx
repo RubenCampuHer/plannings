@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Sparkles, Mail, Lock, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  signInWithGoogle,
   signInWithPassword,
   signUpWithPassword,
 } from "@/lib/auth-actions";
@@ -125,16 +124,13 @@ export default async function LoginPage({
           </div>
         )}
 
-        <form action={signInWithGoogle} className="mb-4">
-          <Button
-            type="submit"
-            variant="outline"
-            className="w-full h-12 flex items-center justify-center gap-2"
-          >
-            <GoogleIcon />
-            Continua amb Google
-          </Button>
-        </form>
+        <a
+          href="/auth/sign-in-google"
+          className="mb-4 w-full h-12 inline-flex items-center justify-center gap-2 rounded-[var(--radius-button)] bg-cream/60 text-ink border border-ink-faint hover:bg-cream-deep/60 font-medium text-sm transition-all"
+        >
+          <GoogleIcon />
+          Continua amb Google
+        </a>
 
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 h-px bg-ink-faint/40" />
