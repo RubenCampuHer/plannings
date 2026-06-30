@@ -7,7 +7,7 @@ import type { Place } from "@/lib/types";
 const MapView = dynamic(() => import("./map-view"), {
   ssr: false,
   loading: () => (
-    <div className="h-[420px] w-full rounded-[var(--radius-card)] bg-cream-soft border border-ink-faint/40 grid place-items-center text-ink-soft text-sm">
+    <div className="h-[280px] sm:h-[420px] w-full rounded-[var(--radius-card)] bg-cream-soft border border-ink-faint/40 grid place-items-center text-ink-soft text-sm">
       Carregant mapa…
     </div>
   ),

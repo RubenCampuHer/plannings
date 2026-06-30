@@ -66,15 +66,25 @@ export function SiteHeader({ user }: { user: { email: string } | null }) {
         <nav className="flex items-center gap-0.5 sm:gap-1">
           {user && (
             <>
-              <NavLink href="/" label={t("plans")} active={isPlans} />
-              <NavLink href="/archive" label={t("archive")} active={isArchive} />
+              {/* A mòbil aquests enllaços viuen dins del UserMenu per no
+                  atapeir el header. */}
+              <div className="hidden sm:flex items-center gap-0.5 sm:gap-1">
+                <NavLink href="/" label={t("plans")} active={isPlans} />
+                <NavLink href="/archive" label={t("archive")} active={isArchive} />
+              </div>
               <Link href="/plans/new" className="ml-1 sm:ml-2 inline-flex" aria-label={t("newPlan")}>
                 <Button size="sm">
                   <Plus className="h-4 w-4" strokeWidth={2.5} />
                   <span className="hidden sm:inline">{t("newPlan")}</span>
                 </Button>
               </Link>
-              <UserMenu email={user.email} />
+              <UserMenu
+                email={user.email}
+                navItems={[
+                  { href: "/", label: t("plans"), active: isPlans },
+                  { href: "/archive", label: t("archive"), active: isArchive },
+                ]}
+              />
             </>
           )}
         </nav>

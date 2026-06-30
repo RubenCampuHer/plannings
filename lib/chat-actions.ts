@@ -7,13 +7,20 @@ import { createSupabaseServer } from "./supabase-server";
 import {
   buildCopilotSystemPrompt,
   COPILOT_FUNCTION_DECLARATIONS,
+  SUBPLAN_FUNCTION_NAMES,
   type ChatMode,
   type Proposal,
+  type ProposalFunctionName,
   type ProposalStatus,
 } from "./chat-prompt";
 import { addPlace, geocodeSearch } from "./place-actions";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY;
+
+// Noms vàlids de funció derivats de les declaracions — única font de veritat.
+const VALID_FUNCTION_NAMES = new Set<ProposalFunctionName>(
+  COPILOT_FUNCTION_DECLARATIONS.map((d) => d.name as ProposalFunctionName),
+);
 
 function getClient(): GoogleGenAI {
   if (!apiKey) {
@@ -120,6 +127,52 @@ export async function sendChatMessage(
       .order("created_at", { ascending: true }),
   ]);
 
+  // Checklist + llocs de cada sub-plan: ho carreguem a banda (els ids dels
+  // fills només es coneixen un cop resolt `childrenRes`) perquè el copilot
+  // pugui referenciar-los i editar-los amb les funcions *_subplan*.
+  const childIds = (childrenRes.data ?? []).map((c) => c.id as string);
+  const [subChecklistRes, subPlacesRes] = await Promise.all([
+    childIds.length > 0
+      ? supabase
+          .from("checklist_items")
+          .select("id,text,done,plan_id")
+          .in("plan_id", childIds)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    childIds.length > 0
+      ? supabase
+          .from("places")
+          .select("id,name,country,plan_id")
+          .in("plan_id", childIds)
+          .order("order_index")
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+  ]);
+  const checklistByChild = new Map<
+    string,
+    Array<{ id: string; text: string; done: boolean }>
+  >();
+  for (const row of subChecklistRes.data ?? []) {
+    const pid = row.plan_id as string;
+    if (!checklistByChild.has(pid)) checklistByChild.set(pid, []);
+    checklistByChild.get(pid)!.push({
+      id: row.id as string,
+      text: row.text as string,
+      done: row.done as boolean,
+    });
+  }
+  const placesByChild = new Map<
+    string,
+    Array<{ id: string; name: string; country?: string }>
+  >();
+  for (const row of subPlacesRes.data ?? []) {
+    const pid = row.plan_id as string;
+    if (!placesByChild.has(pid)) placesByChild.set(pid, []);
+    placesByChild.get(pid)!.push({
+      id: row.id as string,
+      name: row.name as string,
+      country: (row.country as string | null) ?? undefined,
+    });
+  }
+
   const systemInstruction = buildCopilotSystemPrompt({
     title: plan.title,
     // (passem `mode` com a segon argument més avall)
@@ -159,6 +212,8 @@ export async function sendChatMessage(
       endDate: (c.end_date as string | null) ?? undefined,
       summary: c.summary as string,
       body: (c.body as string | null) ?? undefined,
+      checklist: checklistByChild.get(c.id as string) ?? [],
+      places: placesByChild.get(c.id as string) ?? [],
     })),
   }, mode);
 
@@ -207,18 +262,10 @@ export async function sendChatMessage(
     if (part.functionCall) {
       const name = part.functionCall.name;
       const args = (part.functionCall.args ?? {}) as Record<string, unknown>;
-      if (
-        name === "add_place" ||
-        name === "add_checklist_item" ||
-        name === "add_subplan" ||
-        name === "update_plan_metadata" ||
-        name === "update_plan_body" ||
-        name === "delete_place" ||
-        name === "update_checklist_item"
-      ) {
+      if (name && VALID_FUNCTION_NAMES.has(name as ProposalFunctionName)) {
         proposals.push({
           id: crypto.randomUUID(),
-          function_name: name,
+          function_name: name as ProposalFunctionName,
           arguments: args,
           status: "pending",
         });
@@ -356,6 +403,138 @@ export async function sendChatMessage(
           };
           return;
         }
+
+        // ---------- Variants de SUB-PLAN ----------
+        if (SUBPLAN_FUNCTION_NAMES.has(p.function_name)) {
+          const child = await resolveChildPlan(
+            supabase,
+            planId,
+            typeof p.arguments.subplan_id === "string" ? p.arguments.subplan_id : "",
+          );
+          if (!child.ok) {
+            p.status = "failed";
+            p.result_message = child.message;
+            return;
+          }
+          const sub = child.row;
+          p.preview = { subplan: { id: sub.id, title: sub.title } };
+
+          if (p.function_name === "update_subplan_body") {
+            const newBody =
+              typeof p.arguments.new_body === "string" ? p.arguments.new_body : "";
+            if (!newBody) {
+              p.status = "failed";
+              p.result_message = "Body nou buit.";
+              return;
+            }
+            const beforeBody = sub.body ?? "";
+            p.preview.body_stats = {
+              before_chars: beforeBody.length,
+              before_lines: beforeBody.split("\n").length,
+              after_chars: newBody.length,
+              after_lines: newBody.split("\n").length,
+            };
+            return;
+          }
+
+          if (p.function_name === "update_subplan_metadata") {
+            const args = p.arguments;
+            const before: NonNullable<Proposal["preview"]>["metadata_before"] = {};
+            if (typeof args.title === "string") before.title = sub.title;
+            if (typeof args.summary === "string") before.summary = sub.summary;
+            if (typeof args.destination === "string") {
+              before.destination = sub.destination ?? "";
+            }
+            if (typeof args.start_date === "string") {
+              before.start_date = sub.start_date ?? "";
+            }
+            if (typeof args.end_date === "string") {
+              before.end_date = sub.end_date ?? "";
+            }
+            if (Object.keys(before).length === 0) {
+              p.status = "failed";
+              p.result_message = "Cap camp vàlid per actualitzar.";
+              return;
+            }
+            p.preview.metadata_before = before;
+            return;
+          }
+
+          if (p.function_name === "update_subplan_checklist_item") {
+            const itemId =
+              typeof p.arguments.item_id === "string" ? p.arguments.item_id : "";
+            if (!itemId) {
+              p.status = "failed";
+              p.result_message = "Manca item_id.";
+              return;
+            }
+            const { data: row } = await supabase
+              .from("checklist_items")
+              .select("text,done,plan_id")
+              .eq("id", itemId)
+              .maybeSingle();
+            if (!row || row.plan_id !== sub.id) {
+              p.status = "failed";
+              p.result_message = "L'ítem no existeix o no pertany a aquest sub-plan.";
+              return;
+            }
+            p.preview.item_before = {
+              text: row.text as string,
+              done: row.done as boolean,
+            };
+            return;
+          }
+
+          if (p.function_name === "delete_subplan_place") {
+            const placeId =
+              typeof p.arguments.place_id === "string" ? p.arguments.place_id : "";
+            if (!placeId) {
+              p.status = "failed";
+              p.result_message = "Manca place_id.";
+              return;
+            }
+            const { data: row } = await supabase
+              .from("places")
+              .select("name,country,plan_id")
+              .eq("id", placeId)
+              .maybeSingle();
+            if (!row || row.plan_id !== sub.id) {
+              p.status = "failed";
+              p.result_message = "El lloc no existeix o no pertany a aquest sub-plan.";
+              return;
+            }
+            p.preview.place_before = {
+              name: row.name as string,
+              country: (row.country as string | null) ?? undefined,
+            };
+            return;
+          }
+
+          if (p.function_name === "add_subplan_place") {
+            const query =
+              typeof p.arguments.search_query === "string"
+                ? p.arguments.search_query
+                : "";
+            if (!query) return;
+            const results = await geocodeSearch(query);
+            const first = results[0];
+            if (first) {
+              p.preview.geocoded = {
+                name: first.name,
+                country: first.country,
+                lat: first.lat,
+                lng: first.lng,
+                displayName: first.displayName,
+              };
+            } else {
+              p.status = "failed";
+              p.result_message = `OpenStreetMap no ha trobat "${query}". Prova amb més detall (ciutat, país).`;
+            }
+            return;
+          }
+          // add_subplan_checklist_item: només cal l'etiqueta del sub-plan.
+          return;
+        }
       } catch (e) {
         p.status = "failed";
         p.result_message = `Error preparant proposta: ${e instanceof Error ? e.message : String(e)}`;
@@ -408,6 +587,56 @@ type ExecuteResult = {
   message: string;
   path?: string;
 };
+
+type ChildPlanRow = {
+  id: string;
+  title: string;
+  summary: string;
+  destination: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  body: string | null;
+};
+
+type ResolveChildResult =
+  | { ok: true; row: ChildPlanRow }
+  | { ok: false; message: string };
+
+/**
+ * Resol i VALIDA que `subplanId` és fill directe de `parentPlanId`. Defensa
+ * contra ids al·lucinats pel model: cap funció *_subplan ha d'escriure sense
+ * passar per aquí abans.
+ */
+async function resolveChildPlan(
+  supabase: Awaited<ReturnType<typeof createSupabaseServer>>,
+  parentPlanId: string,
+  subplanId: string,
+): Promise<ResolveChildResult> {
+  if (!subplanId) return { ok: false, message: "Manca subplan_id." };
+  const { data: row } = await supabase
+    .from("plans")
+    .select("id,title,summary,destination,start_date,end_date,body,parent_plan_id")
+    .eq("id", subplanId)
+    .maybeSingle();
+  if (!row || row.parent_plan_id !== parentPlanId) {
+    return {
+      ok: false,
+      message: "El sub-plan no existeix o no és fill d'aquest plan.",
+    };
+  }
+  return {
+    ok: true,
+    row: {
+      id: row.id as string,
+      title: row.title as string,
+      summary: row.summary as string,
+      destination: (row.destination as string | null) ?? null,
+      start_date: (row.start_date as string | null) ?? null,
+      end_date: (row.end_date as string | null) ?? null,
+      body: (row.body as string | null) ?? null,
+    },
+  };
+}
 
 async function executeAddPlace(
   planId: string,
@@ -641,15 +870,26 @@ async function executeUpdatePlanBody(
   if (!newBody.trim()) {
     return { success: false, message: "El nou body no pot estar buit." };
   }
+  const patch: Record<string, unknown> = {
+    body: newBody,
+    updated_at: new Date().toISOString(),
+  };
+  // "Summary a nivell d'índex": si el model regenera el resum amb el body, el
+  // guardem alhora perquè la targeta/entradilla quedin al dia.
+  let summaryUpdated = false;
+  if (typeof args.summary === "string" && args.summary.trim()) {
+    patch.summary = args.summary.trim();
+    summaryUpdated = true;
+  }
   const supabase = await createSupabaseServer();
-  const { error } = await supabase
-    .from("plans")
-    .update({ body: newBody, updated_at: new Date().toISOString() })
-    .eq("id", planId);
+  const { error } = await supabase.from("plans").update(patch).eq("id", planId);
   if (error) {
     return { success: false, message: `Error actualitzant body: ${error.message}` };
   }
-  return { success: true, message: "Body actualitzat." };
+  return {
+    success: true,
+    message: summaryUpdated ? "Body i resum actualitzats." : "Body actualitzat.",
+  };
 }
 
 async function executeDeletePlace(
@@ -711,6 +951,32 @@ async function executeUpdateChecklistItem(
   return { success: true, message: "Ítem actualitzat." };
 }
 
+// ---------- Executors de SUB-PLAN ----------
+// Wrappers prims: validen que el target és fill del plan actual i deleguen a
+// l'executor genèric corresponent passant l'id del sub-plan. Així reutilitzem
+// tota la lògica d'escriptura/validació de dades.
+
+async function withResolvedChild(
+  parentPlanId: string,
+  proposal: Proposal,
+  run: (childId: string) => Promise<ExecuteResult>,
+): Promise<ExecuteResult> {
+  const supabase = await createSupabaseServer();
+  const subplanId =
+    typeof proposal.arguments.subplan_id === "string"
+      ? proposal.arguments.subplan_id
+      : "";
+  const child = await resolveChildPlan(supabase, parentPlanId, subplanId);
+  if (!child.ok) return { success: false, message: child.message };
+  const result = await run(child.row.id);
+  if (result.success) {
+    revalidatePath(`/plans/${child.row.id}`);
+    // Enllaç a la card d'èxit perquè l'usuari pugui saltar al sub-plan editat.
+    if (!result.path) result.path = `/plans/${child.row.id}`;
+  }
+  return result;
+}
+
 async function executeProposal(
   planId: string,
   proposal: Proposal,
@@ -730,6 +996,30 @@ async function executeProposal(
       return executeDeletePlace(planId, proposal.arguments);
     case "update_checklist_item":
       return executeUpdateChecklistItem(planId, proposal.arguments);
+    case "update_subplan_body":
+      return withResolvedChild(planId, proposal, (childId) =>
+        executeUpdatePlanBody(childId, proposal.arguments),
+      );
+    case "update_subplan_metadata":
+      return withResolvedChild(planId, proposal, (childId) =>
+        executeUpdatePlanMetadata(childId, proposal.arguments),
+      );
+    case "add_subplan_checklist_item":
+      return withResolvedChild(planId, proposal, (childId) =>
+        executeAddChecklistItem(childId, proposal.arguments),
+      );
+    case "update_subplan_checklist_item":
+      return withResolvedChild(planId, proposal, (childId) =>
+        executeUpdateChecklistItem(childId, proposal.arguments),
+      );
+    case "add_subplan_place":
+      return withResolvedChild(planId, proposal, (childId) =>
+        executeAddPlace(childId, proposal),
+      );
+    case "delete_subplan_place":
+      return withResolvedChild(planId, proposal, (childId) =>
+        executeDeletePlace(childId, proposal.arguments),
+      );
     default:
       return { success: false, message: `Funció desconeguda: ${(proposal as { function_name: string }).function_name}` };
   }

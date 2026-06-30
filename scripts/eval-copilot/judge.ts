@@ -96,7 +96,7 @@ export async function judgeResponse(args: {
 }): Promise<JudgeResult> {
   const userMessage = `### MODE D'AQUEST CAS
 
-${args.evalCase.mode === "conversa" ? "CONVERSA (només Q&A, el copilot NO té tools disponibles — no pot cridar funcions encara que volgués)" : "EDICIÓ (el copilot té tools disponibles per a add_place, add_checklist_item, add_subplan)"}
+${args.evalCase.mode === "conversa" ? "CONVERSA (només Q&A, el copilot NO té tools disponibles — no pot cridar funcions encara que volgués)" : "EDICIÓ (el copilot té tools per crear/editar/esborrar coses del plan actual i també dels seus SUB-PLANS via funcions *_subplan amb subplan_id)"}
 
 ### CONTEXT DEL COPILOT (el seu system prompt)
 

@@ -85,6 +85,13 @@ export async function MarkdownBody({ children }: { children: string }) {
               </li>
             );
           },
+          // Embolcallem les taules amb un contenidor scrollable perquè una
+          // taula ampla no desbordi el viewport en mòbil.
+          table: ({ children }) => (
+            <div className="overflow-x-auto">
+              <table>{children}</table>
+            </div>
+          ),
           img: ({ src, alt }) => {
             const url = typeof src === "string" ? src : undefined;
             const caption = alt?.trim();

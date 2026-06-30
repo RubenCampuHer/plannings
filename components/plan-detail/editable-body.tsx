@@ -56,7 +56,7 @@ export function EditableBody({
           type="button"
           onClick={() => setEditing(true)}
           aria-label="Editar cos del plan"
-          className="absolute top-0 right-0 opacity-60 sm:opacity-0 sm:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity p-1 text-ink-soft z-10"
+          className="absolute top-0 right-0 grid place-items-center h-11 w-11 -mt-1 -mr-1 opacity-60 sm:opacity-0 sm:group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 transition-opacity text-ink-soft z-10"
         >
           <Pencil className="h-4 w-4" strokeWidth={2} />
         </button>
@@ -82,7 +82,7 @@ export function EditableBody({
         defaultValue={source}
         rows={20}
         autoFocus
-        className="w-full px-4 py-3 rounded-md border border-ink-faint/60 bg-cream-soft text-ink font-mono text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40"
+        className="w-full px-4 py-3 rounded-md border border-ink-faint/60 bg-cream-soft text-ink font-mono text-base sm:text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40"
       />
       <div className="flex items-center gap-3">
         <Button onClick={save} disabled={pending} variant="primary" size="sm">

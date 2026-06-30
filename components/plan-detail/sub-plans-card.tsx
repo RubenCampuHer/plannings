@@ -43,7 +43,7 @@ export function SubPlansCard({
                     {c.title}
                   </span>
                   {c.status === "archived" && (
-                    <span className="text-[10px] uppercase tracking-wider text-ink-soft/60 shrink-0">
+                    <span className="text-[11px] uppercase tracking-wider text-ink-soft/70 shrink-0">
                       arxivat
                     </span>
                   )}

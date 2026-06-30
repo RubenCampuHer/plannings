@@ -50,7 +50,7 @@ export function DeleteAccountButton() {
         onChange={(e) => setText(e.target.value)}
         disabled={isPending}
         autoFocus
-        className="w-full h-10 px-3 rounded-md bg-cream border border-peach-deep/50 text-ink text-sm focus:outline-none focus:ring-2 focus:ring-peach/30"
+        className="w-full h-10 px-3 rounded-md bg-cream border border-peach-deep/50 text-ink text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-peach/30"
       />
       {error && (
         <p className="text-xs text-peach-deep">{error}</p>

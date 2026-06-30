@@ -19,6 +19,17 @@ function defaultPos(): Pos {
   };
 }
 
+// Mòbil = pantalla estreta O dispositiu tàctil (pointer: coarse). Així una
+// tauleta/mòbil en landscape (>640px) també rep el bottom-sheet en lloc del
+// panell arrossegable per punter, inadequat per al tacte.
+function detectMobile(): boolean {
+  if (typeof window === "undefined") return false;
+  const coarse =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return window.innerWidth < MOBILE_BREAKPOINT || coarse;
+}
+
 function constrain(p: Pos): Pos {
   if (typeof window === "undefined") return p;
   // Deixem com a mínim 100px del header visible perquè l'usuari pugui tornar
@@ -35,13 +46,7 @@ function constrain(p: Pos): Pos {
  * que es pot arrossegar pel handle del header; la posició es persisteix a
  * localStorage. Al mòbil mostra un bottom sheet quasi-fullscreen sense drag.
  */
-export function FloatingChat({
-  planId,
-  planTitle,
-}: {
-  planId: string;
-  planTitle: string;
-}) {
+export function FloatingChat({ planId }: { planId: string }) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<Pos>({ x: 0, y: 0 });
@@ -52,7 +57,7 @@ export function FloatingChat({
   // Inicialització: mount + restaurar posició + detectar mobile.
   useEffect(() => {
     setMounted(true);
-    const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+    const mobile = detectMobile();
     setIsMobile(mobile);
     if (!mobile) {
       try {
@@ -74,7 +79,7 @@ export function FloatingChat({
   // Resize: re-detecta mobile + re-constreny posició.
   useEffect(() => {
     function onResize() {
-      const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      const mobile = detectMobile();
       setIsMobile(mobile);
       if (!mobile) setPos((p) => constrain(p));
     }
@@ -143,7 +148,7 @@ export function FloatingChat({
         onClick={() => setOpen(true)}
         aria-label="Obrir Copilot"
         title="Pregunta a la IA sobre aquest plan"
-        className="fixed bottom-6 right-6 z-40 grid place-items-center h-14 w-14 rounded-full bg-peach text-white shadow-[0_8px_24px_-8px_rgba(226,122,69,0.6)] hover:bg-peach-deep hover:scale-105 active:scale-95 transition-all"
+        className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-[calc(1.5rem+env(safe-area-inset-right))] z-40 grid place-items-center h-14 w-14 rounded-full bg-peach text-white shadow-[0_8px_24px_-8px_rgba(226,122,69,0.6)] hover:bg-peach-deep hover:scale-105 active:scale-95 transition-all"
       >
         <Sparkles className="h-6 w-6" strokeWidth={2.25} />
       </button>
@@ -168,8 +173,8 @@ export function FloatingChat({
             <X className="h-5 w-5" strokeWidth={2} />
           </button>
         </div>
-        <div className="flex-1 min-h-0 px-4 pt-3 pb-4 flex flex-col">
-          <PlanChat planId={planId} planTitle={planTitle} />
+        <div className="flex-1 min-h-0 px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))] flex flex-col">
+          <PlanChat planId={planId} />
         </div>
       </div>
     );
@@ -213,7 +218,7 @@ export function FloatingChat({
         </button>
       </div>
       <div className="flex-1 min-h-0 px-4 pt-3 pb-4 flex flex-col">
-        <PlanChat planId={planId} planTitle={planTitle} />
+        <PlanChat planId={planId} />
       </div>
     </div>
   );

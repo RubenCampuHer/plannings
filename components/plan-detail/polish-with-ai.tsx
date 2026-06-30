@@ -276,7 +276,7 @@ export function PolishWithAi(props: PolishWithAiProps) {
         <button
           type="button"
           onClick={() => setSuggestions(null)}
-          className="text-ink-soft hover:text-ink"
+          className="grid place-items-center h-11 w-11 -mr-2 -mt-1 shrink-0 text-ink-soft hover:text-ink"
           aria-label="Tancar"
         >
           <X className="h-5 w-5" />
@@ -295,7 +295,8 @@ export function PolishWithAi(props: PolishWithAiProps) {
           <FileText className="h-4 w-4 text-ink-soft" strokeWidth={2} />
           <span className="font-medium text-ink">Reemplaçar cos del plan</span>
         </label>
-        <pre className="ml-6 max-h-72 overflow-auto rounded-md border border-ink-faint/30 bg-cream p-3 text-xs font-mono text-ink whitespace-pre-wrap">
+        {/* Prosa catalana: font normal i text-sm (no mono) per llegir-la millor. */}
+        <pre className="ml-6 max-h-72 overflow-auto rounded-md border border-ink-faint/30 bg-cream p-3 text-sm font-sans text-ink whitespace-pre-wrap">
           {suggestions.enrichedBody}
         </pre>
       </section>

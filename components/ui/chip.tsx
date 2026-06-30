@@ -30,7 +30,8 @@ export function Chip({
       type="button"
       onClick={onClick}
       className={cn(
-        "h-9 px-4 rounded-full border text-sm font-medium transition-all duration-200 select-none",
+        // h-11 (44px) a mòbil per touch target; h-9 a sm+ per compacitat.
+        "h-11 sm:h-9 px-4 rounded-full border text-sm font-medium transition-all duration-200 select-none",
         tones[tone],
       )}
     >

@@ -138,6 +138,38 @@ async function loadContext(plan: PlanRow) {
     supabase.from("checklist_items").select("id,text,done").eq("plan_id", plan.id),
   ]);
 
+  // Checklist + llocs de cada sub-plan (mirall de lib/chat-actions.ts) perquè
+  // els casos d'edició de sub-plans tinguin els ids al context.
+  const childIds = (childrenRes.data ?? []).map((c) => c.id as string);
+  const [subChecklistRes, subPlacesRes] = await Promise.all([
+    childIds.length > 0
+      ? supabase.from("checklist_items").select("id,text,done,plan_id").in("plan_id", childIds)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    childIds.length > 0
+      ? supabase.from("places").select("id,name,country,plan_id").in("plan_id", childIds).order("order_index")
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+  ]);
+  const checklistByChild = new Map<string, Array<{ id: string; text: string; done: boolean }>>();
+  for (const row of subChecklistRes.data ?? []) {
+    const pid = row.plan_id as string;
+    if (!checklistByChild.has(pid)) checklistByChild.set(pid, []);
+    checklistByChild.get(pid)!.push({
+      id: row.id as string,
+      text: row.text as string,
+      done: row.done as boolean,
+    });
+  }
+  const placesByChild = new Map<string, Array<{ id: string; name: string; country?: string }>>();
+  for (const row of subPlacesRes.data ?? []) {
+    const pid = row.plan_id as string;
+    if (!placesByChild.has(pid)) placesByChild.set(pid, []);
+    placesByChild.get(pid)!.push({
+      id: row.id as string,
+      name: row.name as string,
+      country: (row.country as string | null) ?? undefined,
+    });
+  }
+
   return {
     title: plan.title,
     type: plan.type,
@@ -176,6 +208,8 @@ async function loadContext(plan: PlanRow) {
       endDate: (c.end_date as string | null) ?? undefined,
       summary: c.summary as string,
       body: (c.body as string | null) ?? undefined,
+      checklist: checklistByChild.get(c.id as string) ?? [],
+      places: placesByChild.get(c.id as string) ?? [],
     })),
   };
 }

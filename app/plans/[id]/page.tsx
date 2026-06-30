@@ -169,7 +169,10 @@ export default async function PlanDetailPage({
         </section>
       )}
 
-      <div className="mx-auto max-w-6xl px-6 py-12">
+      {/* pb extra perquè el FAB del copilot (bottom-right) no tapi el final de
+          la columna lateral ni les accions en mòbil. */}
+      <div className="mx-auto max-w-6xl px-6 py-12 pb-28">
+
         {room === "resum" && (
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-12 items-start">
             <div className="space-y-12 min-w-0">
@@ -228,7 +231,7 @@ export default async function PlanDetailPage({
 
       {/* Copilot flotant: FAB sempre visible al detall del plan, panell
           arrossegable al desktop / bottom sheet al mòbil. */}
-      <FloatingChat planId={plan.id} planTitle={plan.title} />
+      <FloatingChat planId={plan.id} />
     </article>
   );
 }

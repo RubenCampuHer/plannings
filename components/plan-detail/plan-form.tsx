@@ -36,10 +36,12 @@ const COVER_PRESETS = [
   "linear-gradient(135deg, #F8C8A0 0%, #F4A26E 40%, #C9DCC4 100%)",
 ];
 
+// text-base (16px) a mòbil evita el zoom automàtic d'iOS en enfocar; sm:text-sm
+// recupera la mida compacta a desktop.
 const FIELD =
-  "w-full h-11 px-3 rounded-md border border-ink-faint/60 bg-cream-soft text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
+  "w-full h-11 px-3 rounded-md border border-ink-faint/60 bg-cream-soft text-ink text-base sm:text-sm placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
 const TEXTAREA =
-  "w-full px-3 py-2 rounded-md border border-ink-faint/60 bg-cream-soft text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
+  "w-full px-3 py-2 rounded-md border border-ink-faint/60 bg-cream-soft text-ink text-base sm:text-sm placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
 const LABEL = "text-sm font-medium text-ink-soft";
 
 export function PlanForm({
@@ -307,7 +309,7 @@ export function PlanForm({
           rows={14}
           defaultValue={plan?.body ?? ""}
           placeholder={"## La idea\n\nQuè volem fer i per què...\n\n## Pendents\n\n- Cosa 1\n- Cosa 2"}
-          className={`${TEXTAREA} font-mono text-sm`}
+          className={`${TEXTAREA} font-mono text-base sm:text-sm`}
         />
       </div>
 
@@ -419,7 +421,7 @@ export function PlanForm({
             type="text"
             value={cover}
             onChange={(e) => setCover(e.target.value)}
-            className={`${FIELD} font-mono text-xs`}
+            className={`${FIELD} font-mono text-base sm:text-xs`}
           />
         </div>
       </div>

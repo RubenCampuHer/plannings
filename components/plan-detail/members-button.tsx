@@ -20,6 +20,7 @@ import {
   leavePlan,
 } from "@/lib/invitation-actions";
 import { generateShareToken, revokeShareToken } from "@/lib/clone-actions";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { PlanInvitation, PlanMember } from "@/lib/types";
 
 type Tab = "members" | "share";
@@ -46,6 +47,12 @@ export function MembersButton({
   const [email, setEmail] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    description?: string;
+    confirmLabel: string;
+    run: () => void;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const cloneLink = shareToken ? `${baseUrl}/clone/${shareToken}` : null;
@@ -62,10 +69,7 @@ export function MembersButton({
     });
   }
 
-  function handleRevokeShare() {
-    if (!window.confirm("Revocar l'enllaç fa que deixi de funcionar. Continuar?")) {
-      return;
-    }
+  function doRevokeShare() {
     const fd = new FormData();
     fd.set("planId", planId);
     startTransition(async () => {
@@ -74,6 +78,15 @@ export function MembersButton({
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : "Error desconegut.");
       }
+    });
+  }
+
+  function handleRevokeShare() {
+    setConfirm({
+      title: "Revocar l'enllaç?",
+      description: "Deixarà de funcionar per a qui el tingui.",
+      confirmLabel: "Revocar",
+      run: doRevokeShare,
     });
   }
 
@@ -128,8 +141,7 @@ export function MembersButton({
     });
   }
 
-  function handleRemove(userId: string) {
-    if (!window.confirm("Treure aquest membre del pla?")) return;
+  function doRemove(userId: string) {
     const fd = new FormData();
     fd.set("planId", planId);
     fd.set("userId", userId);
@@ -142,14 +154,16 @@ export function MembersButton({
     });
   }
 
-  function handleLeave() {
-    if (
-      !window.confirm(
-        "Segur que vols sortir d'aquest pla? Perdràs l'accés.",
-      )
-    ) {
-      return;
-    }
+  function handleRemove(userId: string) {
+    setConfirm({
+      title: "Treure aquest membre?",
+      description: "Deixarà de tenir accés al pla.",
+      confirmLabel: "Treure",
+      run: () => doRemove(userId),
+    });
+  }
+
+  function doLeave() {
     const fd = new FormData();
     fd.set("planId", planId);
     startTransition(async () => {
@@ -158,6 +172,15 @@ export function MembersButton({
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : "Error desconegut.");
       }
+    });
+  }
+
+  function handleLeave() {
+    setConfirm({
+      title: "Sortir d'aquest pla?",
+      description: "Perdràs l'accés. El propietari pot tornar-te a convidar.",
+      confirmLabel: "Sortir",
+      run: doLeave,
     });
   }
 
@@ -175,11 +198,14 @@ export function MembersButton({
 
       {open && (
         <div
-          className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm flex items-center justify-center px-4 py-8"
+          className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm flex items-end sm:items-center justify-center sm:px-4 sm:py-8"
           onClick={() => setOpen(false)}
         >
           <div
-            className="bg-cream w-full max-w-md rounded-2xl shadow-2xl border border-ink-faint/40 max-h-[90vh] overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Membres i compartir"
+            className="bg-cream w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl border border-ink-faint/40 max-h-[85dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)] sm:pb-0 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <header className="flex items-center justify-between px-5 py-4 border-b border-ink-faint/40">
@@ -188,7 +214,7 @@ export function MembersButton({
               </h2>
               <button
                 onClick={() => setOpen(false)}
-                className="text-ink-soft hover:text-ink"
+                className="grid place-items-center h-11 w-11 -mr-2 text-ink-soft hover:text-ink"
                 aria-label="Tancar"
               >
                 <X className="h-5 w-5" strokeWidth={2} />
@@ -326,7 +352,7 @@ export function MembersButton({
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="email@exemple.com"
                     disabled={isPending}
-                    className="flex-1 h-10 px-3 rounded-md bg-cream-soft border border-ink-faint/50 text-ink text-sm placeholder:text-ink-soft/70 focus:outline-none focus:border-peach focus:ring-2 focus:ring-peach/15"
+                    className="flex-1 h-10 px-3 rounded-md bg-cream-soft border border-ink-faint/50 text-ink text-base sm:text-sm placeholder:text-ink-soft/70 focus:outline-none focus:border-peach focus:ring-2 focus:ring-peach/15"
                   />
                   <Button
                     type="submit"
@@ -438,6 +464,20 @@ export function MembersButton({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={confirm?.title ?? ""}
+        description={confirm?.description}
+        confirmLabel={confirm?.confirmLabel ?? "Confirmar"}
+        destructive
+        busy={isPending}
+        onConfirm={() => {
+          confirm?.run();
+          setConfirm(null);
+        }}
+        onCancel={() => setConfirm(null)}
+      />
     </>
   );
 }

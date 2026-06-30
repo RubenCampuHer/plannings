@@ -14,6 +14,27 @@ const ACCEPTED_MIMES = new Set([
   "image/gif",
 ]);
 
+const ACCEPTED_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "heic",
+  "heif",
+  "avif",
+  "gif",
+]);
+
+// Safari/Android poden reportar file.type buit per a HEIC; validem per extensió.
+function isAcceptedImage(file: File): boolean {
+  if (ACCEPTED_MIMES.has(file.type)) return true;
+  if (file.type === "" || file.type === "application/octet-stream") {
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    return ACCEPTED_EXTENSIONS.has(ext);
+  }
+  return false;
+}
+
 function extensionFor(mime: string, fallback: string): string {
   switch (mime) {
     case "image/jpeg":
@@ -52,7 +73,7 @@ export function InlineImageInserter({
   const [error, setError] = useState<string | null>(null);
 
   async function handleFile(file: File) {
-    if (!ACCEPTED_MIMES.has(file.type)) {
+    if (!isAcceptedImage(file)) {
       setError("Format no suportat.");
       return;
     }

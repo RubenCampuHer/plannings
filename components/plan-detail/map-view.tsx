@@ -35,12 +35,22 @@ export default function MapView({ places }: { places: Place[] }) {
   );
   const zoom = span > 60 ? 2 : span > 20 ? 3 : span > 5 ? 5 : span > 1 ? 9 : 12;
 
+  // En tàctil desactivem l'arrossegament: així un swipe vertical fa scroll de
+  // la pàgina en lloc de quedar atrapat panejant el mapa. Els marcadors segueixen
+  // sent tappables i hi ha l'enllaç "Obre al Maps" per a la interacció completa.
+  // (MapView és client-only via dynamic ssr:false, així que window és segur.)
+  const isTouch =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+
   return (
-    <div className="h-[420px] w-full rounded-[var(--radius-card)] overflow-hidden border border-ink-faint/40 shadow-[0_4px_16px_-8px_rgba(58,46,42,0.15)]">
+    <div className="h-[280px] sm:h-[420px] w-full rounded-[var(--radius-card)] overflow-hidden border border-ink-faint/40 shadow-[0_4px_16px_-8px_rgba(58,46,42,0.15)]">
       <MapContainer
         center={center}
         zoom={zoom}
         scrollWheelZoom={false}
+        dragging={!isTouch}
         className="h-full w-full"
       >
         <TileLayer

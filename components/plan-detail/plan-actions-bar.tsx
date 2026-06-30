@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Archive, ArchiveRestore, Pencil, Share2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { archivePlan, deletePlan, unarchivePlan } from "@/lib/plan-actions";
 
 type Props = {
@@ -21,6 +22,7 @@ export function PlanActionsBar({
   membersSlot,
 }: Props) {
   const [isPending, startTransition] = useTransition();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   function handleArchive() {
     startTransition(async () => {
@@ -33,10 +35,6 @@ export function PlanActionsBar({
   }
 
   function handleDelete() {
-    const ok = window.confirm(
-      `Segur que vols esborrar "${planTitle}"?\n\nAixò esborrarà també tots els llocs, checklist, despeses, fotos i documents associats. No es pot desfer.`,
-    );
-    if (!ok) return;
     startTransition(async () => {
       await deletePlan(planId);
     });
@@ -50,7 +48,7 @@ export function PlanActionsBar({
       <Button
         variant="ghost"
         size="sm"
-        onClick={handleDelete}
+        onClick={() => setConfirmingDelete(true)}
         disabled={isPending}
         title="Esborrar aquest plan per sempre"
       >
@@ -93,6 +91,17 @@ export function PlanActionsBar({
           Editar
         </Button>
       </Link>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        title={`Esborrar "${planTitle}"?`}
+        description="Esborrarà també tots els llocs, checklist, despeses, fotos i documents associats. No es pot desfer."
+        confirmLabel="Esborrar per sempre"
+        destructive
+        busy={isPending}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmingDelete(false)}
+      />
     </span>
   );
 }

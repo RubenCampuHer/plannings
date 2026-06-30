@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter, Caveat } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages, getTranslations } from "next-intl/server";
@@ -27,6 +27,15 @@ const caveat = Caveat({
 export const metadata: Metadata = {
   title: "Plannings · Els nostres plans",
   description: "Un diari compartit de plans, escapades i somnis.",
+};
+
+// viewport-fit=cover habilita env(safe-area-inset-*) per respectar el notch i la
+// home-bar de l'iPhone (el bottom-sheet del copilot i el FAB en depenen).
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#FBF7F0",
 };
 
 export default async function RootLayout({

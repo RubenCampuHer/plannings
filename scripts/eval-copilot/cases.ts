@@ -23,6 +23,7 @@ export type EvalCase = {
     | "function-call"
     | "no-function-call"
     | "mode-redirect"
+    | "subplan-edit"
   >;
   /** Per al judge: què hauria de fer una resposta excel·lent. */
   ideal_behavior: string;
@@ -161,5 +162,31 @@ export const CASES: EvalCase[] = [
     focus: ["no-function-call", "recommendation"],
     ideal_behavior:
       "AQUESTA és una pregunta (Q&A), no una ordre. Encara que estiguem en mode edició, NO ha de cridar add_checklist_item. Hauria de respondre amb suggeriments en text i preguntar si vol que els afegeixi.",
+  },
+  {
+    mode: "edicio",
+    id: "command-update-subplan-metadata",
+    question:
+      "Canvia el resum del sub-plan de Vietnam perquè digui que és la part central del viatge.",
+    focus: ["function-call", "subplan-edit"],
+    ideal_behavior:
+      "Hauria de cridar update_subplan_metadata amb el subplan_id correcte de Vietnam (del context) i summary nou. Text breu confirmant. NO ha de tocar el plan pare ni demanar que obri el chat del sub-plan.",
+  },
+  {
+    mode: "edicio",
+    id: "command-update-subplan-checklist",
+    question:
+      "Marca com a fet l'ítem de reservar vols dins la checklist del sub-plan de Vietnam.",
+    focus: ["function-call", "subplan-edit"],
+    ideal_behavior:
+      "Hauria de cridar update_subplan_checklist_item amb subplan_id de Vietnam, l'item_id correcte (de la checklist del sub-plan al context) i done=true. Si no hi ha cap ítem clar de vols, hauria de dir-ho en lloc d'inventar un id.",
+  },
+  {
+    mode: "edicio",
+    id: "qa-no-command-subplan",
+    question: "Què li falta al sub-plan de Vietnam?",
+    focus: ["no-function-call", "subplan-edit", "recommendation"],
+    ideal_behavior:
+      "És una pregunta, no una ordre. NO ha de cridar cap funció *_subplan. Hauria de respondre amb suggeriments en text basant-se en el body/checklist del sub-plan.",
   },
 ];

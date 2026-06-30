@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ImageOff, Loader2, Upload } from "lucide-react";
 import { clearCoverImage, setCoverImage } from "@/lib/cover-actions";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 const ACCEPTED_MIMES = new Set([
   "image/jpeg",
@@ -14,6 +15,27 @@ const ACCEPTED_MIMES = new Set([
   "image/heif",
   "image/avif",
 ]);
+
+const ACCEPTED_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "heic",
+  "heif",
+  "avif",
+]);
+
+// Alguns navegadors (Safari/Android) reporten file.type buit per a HEIC; en
+// aquest cas validem per extensió per no rebutjar imatges vàlides del mòbil.
+function isAcceptedImage(file: File): boolean {
+  if (ACCEPTED_MIMES.has(file.type)) return true;
+  if (file.type === "" || file.type === "application/octet-stream") {
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    return ACCEPTED_EXTENSIONS.has(ext);
+  }
+  return false;
+}
 
 function extensionFor(mime: string, fallback: string): string {
   switch (mime) {
@@ -54,7 +76,7 @@ export function CoverEditor({
   const [error, setError] = useState<string | null>(null);
 
   async function uploadFile(file: File) {
-    if (!ACCEPTED_MIMES.has(file.type)) {
+    if (!isAcceptedImage(file)) {
       setError("Format no suportat. Usa jpg, png, webp, heic o avif.");
       return;
     }
@@ -90,15 +112,17 @@ export function CoverEditor({
     e.target.value = "";
   }
 
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+
   function remove() {
     if (!imagePath) return;
-    if (!confirm("Treure la imatge i tornar al degradat?")) return;
     setError(null);
     startTransition(async () => {
       try {
         await clearCoverImage(planId);
         setImageUrl(undefined);
         setImagePath(undefined);
+        setConfirmingRemove(false);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -145,9 +169,9 @@ export function CoverEditor({
         {hasImage && (
           <button
             type="button"
-            onClick={remove}
+            onClick={() => setConfirmingRemove(true)}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-sm text-ink-soft hover:text-peach-deep disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-0 sm:h-9 px-3 rounded-md text-sm text-ink-soft hover:text-peach-deep disabled:opacity-50 transition-colors"
           >
             <ImageOff className="h-3.5 w-3.5" strokeWidth={2} />
             Treure imatge
@@ -170,6 +194,17 @@ export function CoverEditor({
       </p>
 
       {error && <p className="text-xs text-peach-deep">{error}</p>}
+
+      <ConfirmDialog
+        open={confirmingRemove}
+        title="Treure la imatge?"
+        description="Es tornarà a mostrar el degradat de sota."
+        confirmLabel="Treure"
+        destructive
+        busy={busy}
+        onConfirm={remove}
+        onCancel={() => setConfirmingRemove(false)}
+      />
     </div>
   );
 }

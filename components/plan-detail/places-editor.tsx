@@ -13,7 +13,7 @@ import {
 import type { Place } from "@/lib/types";
 
 const FIELD =
-  "w-full h-11 pl-10 pr-3 rounded-md border border-ink-faint/60 bg-cream-soft text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
+  "w-full h-11 pl-10 pr-3 rounded-md border border-ink-faint/60 bg-cream-soft text-ink text-base sm:text-sm placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40";
 
 export function PlacesEditor({
   planId,
@@ -31,7 +31,7 @@ export function PlacesEditor({
 
   // Sync amb props quan el server re-render després d'un revalidatePath.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setPlaces(initialPlaces);
   }, [initialPlaces]);
 
@@ -39,7 +39,7 @@ export function PlacesEditor({
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setResults([]);
       setSearching(false);
       return;
@@ -204,12 +204,12 @@ export function PlacesEditor({
                       <span className="block text-xs text-ink-soft">{p.country}</span>
                     )}
                   </span>
-                  <div className="flex items-center gap-0.5 opacity-70 sm:opacity-40 sm:group-hover:opacity-100 transition">
+                  <div className="flex items-center gap-1 sm:gap-0.5 opacity-70 sm:opacity-40 sm:group-hover:opacity-100 transition">
                     <button
                       type="button"
                       onClick={() => move(i, "up")}
                       disabled={isTemp || isFirst}
-                      className="p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
+                      className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
                       aria-label={`Pujar ${p.name}`}
                     >
                       <ArrowUp className="h-4 w-4" strokeWidth={2} />
@@ -218,7 +218,7 @@ export function PlacesEditor({
                       type="button"
                       onClick={() => move(i, "down")}
                       disabled={isTemp || isLast}
-                      className="p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
+                      className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
                       aria-label={`Baixar ${p.name}`}
                     >
                       <ArrowDown className="h-4 w-4" strokeWidth={2} />
@@ -227,7 +227,7 @@ export function PlacesEditor({
                       type="button"
                       onClick={() => handleDelete(p.id)}
                       disabled={isTemp}
-                      className="p-1 hover:text-peach-deep transition disabled:cursor-wait"
+                      className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-peach-deep transition disabled:cursor-wait"
                       aria-label={`Esborrar ${p.name}`}
                     >
                       <Trash2 className="h-4 w-4" strokeWidth={2} />

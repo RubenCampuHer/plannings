@@ -112,7 +112,8 @@
   font-size: 1.0625rem;
 }
 .prose-warm h2 {
-  font-size: 1.75rem;
+  /* clamp: a mòbil baixa fins a ~1.45rem perquè títols llargs no apretin. */
+  font-size: clamp(1.45rem, 4.5vw, 1.75rem);
   margin-top: 2.5rem;
   margin-bottom: 1rem;
 }

@@ -35,7 +35,10 @@ export function PlanRooms({
   }
 
   return (
-    <nav aria-label="Vista del plan" className="flex items-center gap-6 text-sm">
+    <nav
+      aria-label="Vista del plan"
+      className="flex items-center gap-4 sm:gap-6 text-sm overflow-x-auto whitespace-nowrap -mb-px"
+    >
       {available.map((room) => {
         const { label, Icon } = META[room];
         const isActive = room === active;
@@ -46,7 +49,7 @@ export function PlanRooms({
             key={room}
             href={hrefFor(room)}
             aria-current={isActive ? "page" : undefined}
-            className={`flex items-center gap-2 py-3 border-b-2 transition-colors ${
+            className={`flex items-center gap-2 py-3 border-b-2 shrink-0 transition-colors ${
               isActive
                 ? "border-peach text-ink font-medium"
                 : "border-transparent text-ink-soft hover:text-ink hover:border-ink-faint/50"

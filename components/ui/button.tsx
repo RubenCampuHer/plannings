@@ -32,7 +32,9 @@ export const Button = React.forwardRef<
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-[var(--radius-button)] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-peach/50 focus-visible:ring-offset-2 focus-visible:ring-offset-cream disabled:opacity-50 disabled:cursor-not-allowed",
+        // min-h-[44px] garanteix un objectiu tàctil de 44px a mòbil; a sm+ el
+        // botó torna a la seva alçada compacta (h-8/h-10).
+        "inline-flex items-center justify-center gap-2 rounded-[var(--radius-button)] font-medium transition-all duration-150 min-h-[44px] sm:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-peach/50 focus-visible:ring-offset-2 focus-visible:ring-offset-cream disabled:opacity-50 disabled:cursor-not-allowed",
         VARIANTS[variant],
         SIZES[size],
         className,

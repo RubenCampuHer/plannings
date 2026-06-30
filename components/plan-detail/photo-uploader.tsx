@@ -16,6 +16,28 @@ const ACCEPTED_MIMES = new Set([
   "image/gif",
 ]);
 
+const ACCEPTED_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "heic",
+  "heif",
+  "avif",
+  "gif",
+]);
+
+// Safari/Android poden reportar file.type buit per a HEIC; validem per extensió
+// per no rebutjar imatges vàlides del mòbil.
+function isAcceptedImage(file: File): boolean {
+  if (ACCEPTED_MIMES.has(file.type)) return true;
+  if (file.type === "" || file.type === "application/octet-stream") {
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    return ACCEPTED_EXTENSIONS.has(ext);
+  }
+  return false;
+}
+
 function extensionFor(mime: string, fallback: string): string {
   switch (mime) {
     case "image/jpeg":
@@ -46,7 +68,7 @@ export function PhotoUploader({ planId }: { planId: string }) {
   const [dragOver, setDragOver] = useState(false);
 
   async function handleFiles(fileList: FileList | File[]) {
-    const files = Array.from(fileList).filter((f) => ACCEPTED_MIMES.has(f.type));
+    const files = Array.from(fileList).filter(isAcceptedImage);
     if (files.length === 0) {
       setError("Cap fitxer vàlid (només jpg/png/webp/heic/avif/gif).");
       return;

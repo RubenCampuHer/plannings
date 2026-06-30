@@ -36,6 +36,7 @@ import {
   type ChatMessage,
 } from "@/lib/chat-actions";
 import type { ChatMode, Proposal } from "@/lib/chat-prompt";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 const MODE_KEY = "plannings:chat-mode";
 
@@ -44,13 +45,7 @@ const MODE_KEY = "plannings:chat-mode";
  * places + checklist + body + pare/fills) i pot proposar canvis via function
  * calling — l'usuari els confirma amb una targeta de proposta dins del xat.
  */
-export function PlanChat({
-  planId,
-  planTitle,
-}: {
-  planId: string;
-  planTitle: string;
-}) {
+export function PlanChat({ planId }: { planId: string }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -62,6 +57,7 @@ export function PlanChat({
   // Set d'ids de propostes en procés (aplicant/cancel·lant) per mostrar loaders
   // a les targetes corresponents sense bloquejar tot el xat.
   const [busyProposals, setBusyProposals] = useState<Set<string>>(new Set());
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -105,7 +101,7 @@ export function PlanChat({
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [messages.length, pending]);
 
   async function send() {
@@ -147,13 +143,11 @@ export function PlanChat({
   }
 
   function clearConversation() {
-    if (messages.length === 0) return;
-    const ok = window.confirm("Esborrar tota la conversa? No es pot desfer.");
-    if (!ok) return;
     startClear(async () => {
       try {
         await clearChatMessages(planId);
         setMessages([]);
+        setConfirmingClear(false);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -203,9 +197,9 @@ export function PlanChat({
           {messages.length > 0 && (
             <button
               type="button"
-              onClick={clearConversation}
+              onClick={() => setConfirmingClear(true)}
               disabled={clearing}
-              className="text-xs text-ink-soft hover:text-peach-deep inline-flex items-center gap-1 shrink-0"
+              className="text-xs text-ink-soft hover:text-peach-deep inline-flex items-center gap-1 shrink-0 min-h-[40px] sm:min-h-0 px-1"
               title="Esborrar tota la conversa"
             >
               <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
@@ -213,10 +207,10 @@ export function PlanChat({
             </button>
           )}
         </div>
-        <p className="text-[11px] text-ink-soft leading-snug">
+        <p className="text-xs text-ink-soft leading-snug">
           {mode === "conversa"
             ? "Mode conversa: el copilot només respon. Per fer canvis al plan, passa a Edició."
-            : "Mode edició: el copilot pot proposar afegir llocs/checklist/sub-plans. Tu confirmes."}
+            : "Mode edició: el copilot pot proposar canvis al plan i als seus sub-plans. Tu confirmes."}
         </p>
       </header>
 
@@ -282,25 +276,36 @@ export function PlanChat({
           }
           rows={2}
           disabled={pending}
-          className="w-full px-3 py-2 pr-12 rounded-md border border-ink-faint/60 bg-cream-soft text-ink text-sm placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40 resize-none disabled:opacity-60"
+          className="w-full px-3 py-2 pr-12 rounded-md border border-ink-faint/60 bg-cream-soft text-ink text-base sm:text-sm placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40 resize-none disabled:opacity-60"
         />
         <button
           type="button"
           onClick={send}
           disabled={!input.trim() || pending}
           aria-label="Enviar"
-          className="absolute right-2 bottom-2 grid place-items-center h-8 w-8 rounded-full bg-peach text-white shadow-[0_2px_0_0_rgba(226,122,69,0.25)] hover:bg-peach-deep disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="absolute right-2 bottom-2 grid place-items-center h-10 w-10 sm:h-8 sm:w-8 rounded-full bg-peach text-white shadow-[0_2px_0_0_rgba(226,122,69,0.25)] hover:bg-peach-deep disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {pending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
+            <Loader2 className="h-4 w-4 sm:h-3.5 sm:w-3.5 animate-spin" strokeWidth={2} />
           ) : (
-            <Send className="h-3.5 w-3.5" strokeWidth={2} />
+            <Send className="h-4 w-4 sm:h-3.5 sm:w-3.5" strokeWidth={2} />
           )}
         </button>
       </div>
-      <p className="shrink-0 text-[10px] text-ink-soft mt-1">
+      <p className="shrink-0 hidden sm:block text-xs text-ink-soft mt-1">
         ⌘/Ctrl + Enter per enviar
       </p>
+
+      <ConfirmDialog
+        open={confirmingClear}
+        title="Esborrar tota la conversa?"
+        description="No es pot desfer."
+        confirmLabel="Esborrar"
+        destructive
+        busy={clearing}
+        onConfirm={clearConversation}
+        onCancel={() => setConfirmingClear(false)}
+      />
     </section>
   );
 }
@@ -535,37 +540,59 @@ function describeProposal(p: Proposal): {
       const before = p.preview?.item_before?.text ?? "ítem";
       return { title: `Editar checklist: "${before}"`, Icon: ListTodo };
     }
+    case "update_subplan_body":
+      return {
+        title: `Reescriure el cos del sub-plan "${subTitle(p)}"`,
+        Icon: FileText,
+      };
+    case "update_subplan_metadata":
+      return {
+        title: `Actualitzar metadades del sub-plan "${subTitle(p)}"`,
+        Icon: Pencil,
+      };
+    case "add_subplan_checklist_item":
+      return {
+        title: `Afegir a la checklist del sub-plan "${subTitle(p)}": "${String(args.text ?? "?")}"`,
+        Icon: ListTodo,
+      };
+    case "update_subplan_checklist_item": {
+      const before = p.preview?.item_before?.text ?? "ítem";
+      return {
+        title: `Editar checklist del sub-plan "${subTitle(p)}": "${before}"`,
+        Icon: ListTodo,
+      };
+    }
+    case "add_subplan_place":
+      return {
+        title: `Afegir "${String(args.name ?? "?")}" al mapa del sub-plan "${subTitle(p)}"`,
+        Icon: MapPin,
+      };
+    case "delete_subplan_place": {
+      const name = p.preview?.place_before?.name ?? "lloc";
+      return {
+        title: `Esborrar "${name}" del mapa del sub-plan "${subTitle(p)}"`,
+        Icon: Trash2,
+      };
+    }
   }
+}
+
+/** Títol del sub-plan target d'una proposta *_subplan (per a les cards). */
+function subTitle(p: Proposal): string {
+  return p.preview?.subplan?.title ?? "?";
 }
 
 function ProposalDetails({ proposal }: { proposal: Proposal }) {
   const args = proposal.arguments;
+  const subLabel = proposal.preview?.subplan ? (
+    <p className="text-[11px] text-peach-deep font-medium">
+      Sub-plan: {proposal.preview.subplan.title}
+    </p>
+  ) : null;
+
   switch (proposal.function_name) {
-    case "add_place": {
-      const geo = proposal.preview?.geocoded;
-      return (
-        <div className="text-xs text-ink-soft mt-1 space-y-0.5">
-          {geo ? (
-            <>
-              <p>
-                📍 <span className="text-ink">{geo.displayName}</span>
-              </p>
-              <p className="font-mono text-[10px]">
-                {geo.lat.toFixed(4)}, {geo.lng.toFixed(4)}
-                {geo.country ? ` · ${geo.country}` : ""}
-              </p>
-            </>
-          ) : (
-            <p>
-              🔍 <span className="font-mono">{String(args.search_query ?? "")}</span>
-            </p>
-          )}
-          {typeof args.why === "string" && args.why.trim() && (
-            <p className="italic">{args.why}</p>
-          )}
-        </div>
-      );
-    }
+    case "add_place":
+      return renderPlaceAdd(args, proposal.preview?.geocoded);
     case "add_checklist_item":
       return null;
     case "add_subplan":
@@ -584,96 +611,181 @@ function ProposalDetails({ proposal }: { proposal: Proposal }) {
           )}
         </div>
       );
-    case "update_plan_metadata": {
-      const before = proposal.preview?.metadata_before ?? {};
-      const fields: Array<[string, string | undefined, string | undefined]> = [
-        ["Títol", before.title, typeof args.title === "string" ? args.title : undefined],
-        ["Resum", before.summary, typeof args.summary === "string" ? args.summary : undefined],
-        ["Destinació", before.destination, typeof args.destination === "string" ? args.destination : undefined],
-        ["Inici", before.start_date, typeof args.start_date === "string" ? args.start_date : undefined],
-        ["Fi", before.end_date, typeof args.end_date === "string" ? args.end_date : undefined],
-      ];
+    case "update_plan_metadata":
+      return renderMetadataDiff(args, proposal.preview?.metadata_before);
+    case "update_plan_body":
+      return renderBodyStats(args, proposal.preview?.body_stats);
+    case "delete_place":
+      return renderPlaceDelete(args, proposal.preview?.place_before);
+    case "update_checklist_item":
+      return renderChecklistDiff(args, proposal.preview?.item_before);
+    // ---------- Variants de SUB-PLAN: mateix render + etiqueta del sub-plan ----------
+    case "update_subplan_body":
       return (
-        <div className="text-xs mt-1 space-y-1.5">
-          {fields
-            .filter(([, , next]) => next !== undefined)
-            .map(([label, prev, next]) => (
-              <div key={label}>
-                <p className="text-ink-soft font-medium">{label}</p>
-                <p className="text-ink-soft line-through opacity-70 break-words">
-                  {prev || "(buit)"}
-                </p>
-                <p className="text-ink break-words">{next || "(buit)"}</p>
-              </div>
-            ))}
+        <div className="mt-1 space-y-1">
+          {subLabel}
+          {renderBodyStats(args, proposal.preview?.body_stats)}
         </div>
       );
-    }
-    case "update_plan_body": {
-      const stats = proposal.preview?.body_stats;
-      const newBody = typeof args.new_body === "string" ? args.new_body : "";
+    case "update_subplan_metadata":
       return (
-        <div className="text-xs text-ink-soft mt-1 space-y-1.5">
-          {stats && (
-            <p>
-              {stats.before_chars} car · {stats.before_lines} línies →{" "}
-              <span className="text-ink font-medium">
-                {stats.after_chars} car · {stats.after_lines} línies
-              </span>{" "}
-              <span
-                className={
-                  stats.after_chars < stats.before_chars
-                    ? "text-peach-deep"
-                    : "text-sage-deep"
-                }
-              >
-                ({stats.after_chars - stats.before_chars > 0 ? "+" : ""}
-                {stats.after_chars - stats.before_chars} car)
-              </span>
-            </p>
-          )}
-          <BodyPreviewCollapsible body={newBody} />
+        <div className="mt-1 space-y-1">
+          {subLabel}
+          {renderMetadataDiff(args, proposal.preview?.metadata_before)}
         </div>
       );
-    }
-    case "delete_place": {
-      const before = proposal.preview?.place_before;
+    case "add_subplan_checklist_item":
+      return subLabel ? <div className="mt-1">{subLabel}</div> : null;
+    case "update_subplan_checklist_item":
       return (
-        <div className="text-xs text-ink-soft mt-1">
-          {before ? (
-            <p>
-              📍 <span className="line-through">{before.name}</span>
-              {before.country && ` (${before.country})`}
-            </p>
-          ) : (
-            <p className="font-mono">id={String(args.place_id ?? "?")}</p>
-          )}
+        <div className="mt-1 space-y-1">
+          {subLabel}
+          {renderChecklistDiff(args, proposal.preview?.item_before)}
         </div>
       );
-    }
-    case "update_checklist_item": {
-      const before = proposal.preview?.item_before;
-      const nextText = typeof args.text === "string" ? args.text : undefined;
-      const nextDone = typeof args.done === "boolean" ? args.done : undefined;
+    case "add_subplan_place":
       return (
-        <div className="text-xs mt-1 space-y-1">
-          {nextText !== undefined && (
-            <>
-              <p className="text-ink-soft line-through opacity-70 break-words">
-                {before?.text ?? "(?)"}
-              </p>
-              <p className="text-ink break-words">{nextText}</p>
-            </>
-          )}
-          {nextDone !== undefined && (
-            <p className="text-ink-soft">
-              {nextDone ? "✓ marcar com a fet" : "□ desmarcar"}
-            </p>
-          )}
+        <div className="mt-1 space-y-1">
+          {subLabel}
+          {renderPlaceAdd(args, proposal.preview?.geocoded)}
         </div>
       );
-    }
+    case "delete_subplan_place":
+      return (
+        <div className="mt-1 space-y-1">
+          {subLabel}
+          {renderPlaceDelete(args, proposal.preview?.place_before)}
+        </div>
+      );
   }
+}
+
+type Args = Record<string, unknown>;
+type Preview = NonNullable<Proposal["preview"]>;
+
+function renderPlaceAdd(args: Args, geo: Preview["geocoded"]) {
+  return (
+    <div className="text-xs text-ink-soft mt-1 space-y-0.5">
+      {geo ? (
+        <>
+          <p>
+            📍 <span className="text-ink">{geo.displayName}</span>
+          </p>
+          <p className="font-mono text-[10px]">
+            {geo.lat.toFixed(4)}, {geo.lng.toFixed(4)}
+            {geo.country ? ` · ${geo.country}` : ""}
+          </p>
+        </>
+      ) : (
+        <p>
+          🔍 <span className="font-mono">{String(args.search_query ?? "")}</span>
+        </p>
+      )}
+      {typeof args.why === "string" && args.why.trim() && (
+        <p className="italic">{args.why}</p>
+      )}
+    </div>
+  );
+}
+
+function renderPlaceDelete(args: Args, before: Preview["place_before"]) {
+  return (
+    <div className="text-xs text-ink-soft mt-1">
+      {before ? (
+        <p>
+          📍 <span className="line-through">{before.name}</span>
+          {before.country && ` (${before.country})`}
+        </p>
+      ) : (
+        <p className="font-mono">id={String(args.place_id ?? "?")}</p>
+      )}
+    </div>
+  );
+}
+
+function renderMetadataDiff(args: Args, before: Preview["metadata_before"] = {}) {
+  const b = before ?? {};
+  const fields: Array<[string, string | undefined, string | undefined]> = [
+    ["Títol", b.title, typeof args.title === "string" ? args.title : undefined],
+    ["Resum", b.summary, typeof args.summary === "string" ? args.summary : undefined],
+    ["Destinació", b.destination, typeof args.destination === "string" ? args.destination : undefined],
+    ["Inici", b.start_date, typeof args.start_date === "string" ? args.start_date : undefined],
+    ["Fi", b.end_date, typeof args.end_date === "string" ? args.end_date : undefined],
+  ];
+  return (
+    <div className="text-xs mt-1 space-y-1.5">
+      {fields
+        .filter(([, , next]) => next !== undefined)
+        .map(([label, prev, next]) => (
+          <div key={label}>
+            <p className="text-ink-soft font-medium">{label}</p>
+            <p className="text-ink-soft line-through opacity-70 break-words">
+              {prev || "(buit)"}
+            </p>
+            <p className="text-ink break-words">{next || "(buit)"}</p>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function renderBodyStats(args: Args, stats: Preview["body_stats"]) {
+  const newBody = typeof args.new_body === "string" ? args.new_body : "";
+  const newSummary =
+    typeof args.summary === "string" && args.summary.trim()
+      ? args.summary.trim()
+      : null;
+  return (
+    <div className="text-xs text-ink-soft mt-1 space-y-1.5">
+      {stats && (
+        <p>
+          {stats.before_chars} car · {stats.before_lines} línies →{" "}
+          <span className="text-ink font-medium">
+            {stats.after_chars} car · {stats.after_lines} línies
+          </span>{" "}
+          <span
+            className={
+              stats.after_chars < stats.before_chars
+                ? "text-peach-deep"
+                : "text-sage-deep"
+            }
+          >
+            ({stats.after_chars - stats.before_chars > 0 ? "+" : ""}
+            {stats.after_chars - stats.before_chars} car)
+          </span>
+        </p>
+      )}
+      {newSummary && (
+        <p>
+          <span className="font-medium text-ink-soft">Resum nou: </span>
+          <span className="italic text-ink">{newSummary}</span>
+        </p>
+      )}
+      <BodyPreviewCollapsible body={newBody} />
+    </div>
+  );
+}
+
+function renderChecklistDiff(args: Args, before: Preview["item_before"]) {
+  const nextText = typeof args.text === "string" ? args.text : undefined;
+  const nextDone = typeof args.done === "boolean" ? args.done : undefined;
+  return (
+    <div className="text-xs mt-1 space-y-1">
+      {nextText !== undefined && (
+        <>
+          <p className="text-ink-soft line-through opacity-70 break-words">
+            {before?.text ?? "(?)"}
+          </p>
+          <p className="text-ink break-words">{nextText}</p>
+        </>
+      )}
+      {nextDone !== undefined && (
+        <p className="text-ink-soft">
+          {nextDone ? "✓ marcar com a fet" : "□ desmarcar"}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function BodyPreviewCollapsible({ body }: { body: string }) {

@@ -89,11 +89,11 @@ export function HomeCalendar({ plans }: { plans: Plan[] }) {
                             {formatDateRange(p.startDate, p.endDate)}
                           </span>
                           {p.destination && (
-                            <span className="text-xs text-ink-soft truncate">
+                            <span className="text-xs text-ink-soft truncate min-w-0">
                               · {p.destination}
                             </span>
                           )}
-                          <span className="text-[10px] uppercase tracking-wider text-ink-soft/70 ml-auto">
+                          <span className="text-[11px] uppercase tracking-wider text-ink-soft/70 ml-auto shrink-0">
                             {TYPE_LABELS_CA[p.type]}
                           </span>
                         </div>

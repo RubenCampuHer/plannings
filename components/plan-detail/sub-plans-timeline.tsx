@@ -76,7 +76,7 @@ export function SubPlansTimeline({
         {todayInRange && (
           <div
             className="absolute top-0 bottom-0 w-px bg-peach z-10 pointer-events-none"
-            style={{ left: `${todayPct}%` }}
+            style={{ left: `${Math.min(98, Math.max(2, todayPct))}%` }}
             aria-hidden
           >
             <div className="absolute -top-1 -left-1 h-2 w-2 rounded-full bg-peach" />
@@ -104,7 +104,9 @@ export function SubPlansTimeline({
                   {c.title}
                 </span>
               </div>
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-ink-soft tabular-nums whitespace-nowrap">
+              {/* A mòbil amaguem el rang de dates: amb barres amples xocava amb
+                  el títol. A sm+ hi torna a haver espai. */}
+              <span className="hidden sm:block absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-ink-soft tabular-nums whitespace-nowrap">
                 {formatShortDate(c.startDate)} → {formatShortDate(c.endDate)}
               </span>
             </Link>

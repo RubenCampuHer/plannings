@@ -130,6 +130,11 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
           description:
             "El nou cos Markdown sencer. Incloure tots els headings, paràgrafs i imatges inline `![](pp:...)` que han de quedar.",
         },
+        summary: {
+          type: Type.STRING,
+          description:
+            "Resum nou (1-2 frases) per a l'índex/entradilla. Inclou-lo SEMPRE QUE PUGUIS quan el canvi de body sigui substancial i el resum actual hagi quedat desfasat (opcional).",
+        },
       },
       required: ["new_body"],
     },
@@ -173,6 +178,163 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
       required: ["item_id"],
     },
   },
+  // ===================================================================
+  // Edició de SUB-PLANS (fills directes del plan actual). Totes reben el
+  // `subplan_id` tal com apareix al context (secció "Sub-plans"). El
+  // sistema valida que el sub-plan és fill abans d'aplicar res.
+  // ===================================================================
+  {
+    name: "update_subplan_body",
+    description:
+      "Substitueix el cos sencer d'un SUB-PLAN (fill del plan actual) amb un nou Markdown. CRÍTIC: retorna el body COMPLET, no un diff. PRESERVA les imatges inline `![](pp:...)` del sub-plan. Usa el `subplan_id` de la secció 'Sub-plans' del context.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        subplan_id: {
+          type: Type.STRING,
+          description: "ID del sub-plan tal com apareix al context.",
+        },
+        new_body: {
+          type: Type.STRING,
+          description:
+            "El nou cos Markdown sencer del sub-plan, amb tots els headings, paràgrafs i imatges inline que han de quedar.",
+        },
+        summary: {
+          type: Type.STRING,
+          description:
+            "Resum nou (1-2 frases) per a l'índex/entradilla del sub-plan. Inclou-lo SEMPRE QUE PUGUIS quan el canvi sigui substancial i el resum actual hagi quedat desfasat (opcional).",
+        },
+      },
+      required: ["subplan_id", "new_body"],
+    },
+  },
+  {
+    name: "update_subplan_metadata",
+    description:
+      "Edita un o més camps de metadades d'un SUB-PLAN (títol, resum, destinació, dates). Almenys un camp ha de ser present. Usa el `subplan_id` de la secció 'Sub-plans' del context.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        subplan_id: {
+          type: Type.STRING,
+          description: "ID del sub-plan tal com apareix al context.",
+        },
+        title: { type: Type.STRING, description: "Nou títol (opcional)." },
+        summary: {
+          type: Type.STRING,
+          description: "Nou resum (1-2 frases) (opcional).",
+        },
+        destination: {
+          type: Type.STRING,
+          description:
+            "Nova destinació. Per esborrar-la, posa una cadena buida (opcional).",
+        },
+        start_date: {
+          type: Type.STRING,
+          description: "Nova data d'inici YYYY-MM-DD (opcional).",
+        },
+        end_date: {
+          type: Type.STRING,
+          description: "Nova data de fi YYYY-MM-DD (opcional).",
+        },
+      },
+      required: ["subplan_id"],
+    },
+  },
+  {
+    name: "add_subplan_checklist_item",
+    description:
+      "Afegir un item a la checklist d'un SUB-PLAN. Usa NOMÉS quan l'usuari ho demani explícitament. Usa el `subplan_id` de la secció 'Sub-plans'.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        subplan_id: {
+          type: Type.STRING,
+          description: "ID del sub-plan tal com apareix al context.",
+        },
+        text: {
+          type: Type.STRING,
+          description: "Text curt de l'item, en català.",
+        },
+      },
+      required: ["subplan_id", "text"],
+    },
+  },
+  {
+    name: "update_subplan_checklist_item",
+    description:
+      "Edita el text o l'estat d'un ítem de la checklist d'un SUB-PLAN. Almenys un de text/done. Els ids d'ítem els tens sota cada sub-plan al context.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        subplan_id: {
+          type: Type.STRING,
+          description: "ID del sub-plan tal com apareix al context.",
+        },
+        item_id: {
+          type: Type.STRING,
+          description: "ID de l'ítem de checklist tal com apareix al context.",
+        },
+        text: {
+          type: Type.STRING,
+          description: "Nou text de l'ítem (opcional).",
+        },
+        done: {
+          type: Type.BOOLEAN,
+          description: "Marcar com a fet (true) o desmarcar (false) (opcional).",
+        },
+      },
+      required: ["subplan_id", "item_id"],
+    },
+  },
+  {
+    name: "add_subplan_place",
+    description:
+      "Afegir un lloc al mapa d'un SUB-PLAN. El sistema farà geocoding via OpenStreetMap. Usa el `subplan_id` de la secció 'Sub-plans'.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        subplan_id: {
+          type: Type.STRING,
+          description: "ID del sub-plan tal com apareix al context.",
+        },
+        name: {
+          type: Type.STRING,
+          description: "Nom curt del lloc (ex. 'Cinema Verdi').",
+        },
+        search_query: {
+          type: Type.STRING,
+          description:
+            "Query precisa per OpenStreetMap. Inclou ciutat o regió.",
+        },
+        why: {
+          type: Type.STRING,
+          description:
+            "Per què val la pena (opcional, 1 frase — es guarda com a nota).",
+        },
+      },
+      required: ["subplan_id", "name", "search_query"],
+    },
+  },
+  {
+    name: "delete_subplan_place",
+    description:
+      "Esborra un lloc del mapa d'un SUB-PLAN pel seu id. Els ids els tens sota cada sub-plan al context. Usa NOMÉS quan l'usuari ho demani explícitament.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        subplan_id: {
+          type: Type.STRING,
+          description: "ID del sub-plan tal com apareix al context.",
+        },
+        place_id: {
+          type: Type.STRING,
+          description: "ID del lloc tal com apareix al context.",
+        },
+      },
+      required: ["subplan_id", "place_id"],
+    },
+  },
 ];
 
 export type ProposalStatus = "pending" | "applied" | "cancelled" | "failed";
@@ -184,7 +346,23 @@ export type ProposalFunctionName =
   | "update_plan_metadata"
   | "update_plan_body"
   | "delete_place"
-  | "update_checklist_item";
+  | "update_checklist_item"
+  | "update_subplan_body"
+  | "update_subplan_metadata"
+  | "add_subplan_checklist_item"
+  | "update_subplan_checklist_item"
+  | "add_subplan_place"
+  | "delete_subplan_place";
+
+/** Conjunt de noms de funcions que operen sobre un sub-plan (porten subplan_id). */
+export const SUBPLAN_FUNCTION_NAMES: ReadonlySet<ProposalFunctionName> = new Set([
+  "update_subplan_body",
+  "update_subplan_metadata",
+  "add_subplan_checklist_item",
+  "update_subplan_checklist_item",
+  "add_subplan_place",
+  "delete_subplan_place",
+]);
 
 export type Proposal = {
   id: string;
@@ -201,6 +379,11 @@ export type Proposal = {
    *  l'usuari sàpiga exactament què s'aplicarà i, en cas d'updates, què
    *  canvia respecte a l'estat actual. */
   preview?: {
+    /** Variants *_subplan: quin sub-plan és el target (per etiquetar la card). */
+    subplan?: {
+      id: string;
+      title: string;
+    };
     /** add_place: ubicació geocodificada. */
     geocoded?: {
       name: string;
@@ -280,6 +463,10 @@ export type CopilotPlanContext = {
     /** Cos sencer del sub-pla. Si està disponible, el copilot pot raonar
      * amb el seu detall (preus per país, dies específics, etc.). */
     body?: string;
+    /** Checklist del sub-pla amb ids — perquè el copilot pugui editar ítems. */
+    checklist?: Array<{ id: string; text: string; done: boolean }>;
+    /** Llocs del sub-pla amb ids — perquè el copilot pugui esborrar-los. */
+    places?: Array<{ id: string; name: string; country?: string }>;
   }>;
 };
 
@@ -321,15 +508,28 @@ export function buildCopilotSystemPrompt(
 
   const childrenBlock =
     ctx.children.length > 0
-      ? `\nSub-plans (peces d'aquest viatge) — has de fer servir el seu body sencer quan facis càlculs específics per país/regió:\n${ctx.children
+      ? `\nSub-plans (peces d'aquest viatge) — has de fer servir el seu body sencer quan facis càlculs específics per país/regió. Per editar-los usa les funcions \`*_subplan*\` passant el subplan_id=... d'aquí:\n${ctx.children
           .map((c) => {
             const dr = formatDateRange(c.startDate, c.endDate);
             const header = `### Sub-plan: "${c.title}" (${typeLabelOf(c.type)}${
               c.destination ? `, ${c.destination}` : ""
-            }${dr ? `, ${dr}` : ""}) — Enllaç: /plans/${c.id}\nResum: ${c.summary}`;
-            return c.body
-              ? `${header}\n\nCos del sub-plan:\n\`\`\`\n${c.body}\n\`\`\``
-              : header;
+            }${dr ? `, ${dr}` : ""}) — subplan_id=${c.id} · Enllaç: /plans/${c.id}\nResum: ${c.summary}`;
+            const checklistLines =
+              c.checklist && c.checklist.length > 0
+                ? `\nChecklist del sub-plan:\n${c.checklist
+                    .map((i) => `  - [${i.done ? "x" : " "}] item_id=${i.id} · ${i.text}`)
+                    .join("\n")}`
+                : "";
+            const placeLines =
+              c.places && c.places.length > 0
+                ? `\nLlocs al mapa del sub-plan:\n${c.places
+                    .map((p) => `  - place_id=${p.id} · ${p.name}${p.country ? ` (${p.country})` : ""}`)
+                    .join("\n")}`
+                : "";
+            const bodyBlock = c.body
+              ? `\n\nCos del sub-plan:\n\`\`\`\n${c.body}\n\`\`\``
+              : "";
+            return `${header}${checklistLines}${placeLines}${bodyBlock}`;
           })
           .join("\n\n")}`
       : "";
@@ -417,20 +617,28 @@ ${
 
 Usuari: "afegeix Cinema Verdi al mapa"
 Tu: "Per afegir-lo al mapa cal que canviïs a mode Edició a dalt del xat — des d'allà podràs confirmar la proposta. Si em dius una mica més de què és (ciutat, etc.) jo prepararé la cerca quan canviïs."`
-    : `Estàs en mode EDICIÓ. Tens 7 funcions disponibles per proposar modificacions:
+    : `Estàs en mode EDICIÓ. Tens funcions disponibles per proposar modificacions, tant sobre EL PLAN ACTUAL com sobre els seus SUB-PLANS.
 
-**AFEGIR** (creació):
+**PLAN ACTUAL — AFEGIR** (creació):
 - \`add_place(name, search_query, why?)\` — afegir un lloc al mapa
 - \`add_checklist_item(text)\` — afegir un item a la checklist
 - \`add_subplan(title, plan_type, summary, destination?, start_date?, end_date?)\` — crear un sub-plan
 
-**EDITAR** (modificació):
+**PLAN ACTUAL — EDITAR** (modificació):
 - \`update_plan_metadata(title?, summary?, destination?, start_date?, end_date?)\` — canvia un o més camps de metadades (almenys un)
-- \`update_plan_body(new_body)\` — substitueix el cos sencer del plan (Markdown)
+- \`update_plan_body(new_body, summary?)\` — substitueix el cos sencer del plan (Markdown)
 - \`update_checklist_item(item_id, text?, done?)\` — edita text o estat d'un ítem (usa l'id de la llista 'Checklist')
 
-**ESBORRAR**:
+**PLAN ACTUAL — ESBORRAR**:
 - \`delete_place(place_id)\` — treu un lloc del mapa (usa l'id de la llista 'Llocs al mapa')
+
+**SUB-PLANS** (fills d'aquest plan) — passa sempre el \`subplan_id\` de la secció 'Sub-plans':
+- \`update_subplan_body(subplan_id, new_body, summary?)\` — reescriu el cos d'un sub-plan
+- \`update_subplan_metadata(subplan_id, title?, summary?, destination?, start_date?, end_date?)\` — metadades d'un sub-plan
+- \`add_subplan_checklist_item(subplan_id, text)\` / \`update_subplan_checklist_item(subplan_id, item_id, text?, done?)\` — checklist del sub-plan
+- \`add_subplan_place(subplan_id, name, search_query, why?)\` / \`delete_subplan_place(subplan_id, place_id)\` — llocs del sub-plan
+
+Els ids (subplan_id, item_id, place_id) els tens a la secció 'Sub-plans' del context, sota cada sub-plan. NO els inventis.
 
 **REGLA CLAU**: distingeix VERB IMPERATIU vs PREGUNTA. Només crida una funció si l'usuari et dóna una ORDRE explícita ("afegeix...", "canvia...", "esborra...", "treu..."). Per a tota la resta, respon en TEXT.
 
@@ -440,6 +648,9 @@ Tu: "Per afegir-lo al mapa cal que canviïs a mode Edició a dalt del xat — de
 - "Treu Sydney del mapa" → \`delete_place\`
 - "Marca 'Comprar adaptador' com a fet" → \`update_checklist_item\`
 - "Reescriu el body sense referències a Austràlia" → \`update_plan_body\` (amb el body COMPLET nou)
+- "Actualitza el resum del sub-plan Vietnam" → \`update_subplan_metadata\` (amb el seu subplan_id)
+- "Afegeix una secció de transport al sub-plan Tailàndia" → \`update_subplan_body\` (body COMPLET del sub-plan)
+- "Marca l'ítem X de la checklist del sub-plan Vietnam" → \`update_subplan_checklist_item\`
 
 ❌ NO crides funció (només text):
 - "Què em recomanaries afegir?" → text amb suggeriments
@@ -452,14 +663,17 @@ Tu: "Per afegir-lo al mapa cal que canviïs a mode Edició a dalt del xat — de
 3. PRESERVA el to, l'estructura H2/H3 i les imatges de seccions no afectades.
 4. Si l'edit és puntual (canviar 1-2 frases), valora si val més enviar el body sencer o demanar a l'usuari que ho faci des de l'editor.
 
+**REGENERA EL RESUM (índex) quan toca**: quan reescriguis el body (\`update_plan_body\` o \`update_subplan_body\`) i el canvi sigui substancial, passa també \`summary\` amb un resum nou (1-2 frases) perquè la targeta de l'índex i l'entradilla quedin al dia. Fes-ho SEMPRE QUE PUGUIS, no per canvis menors.
+
 **EDITS MASSIUS** ("treu X de tot", "actualitza totes les referències a Y"):
-Pots cridar diverses funcions en una sola resposta per cobrir-ho tot. Exemple, si l'usuari diu "treu Austràlia de tot": crida \`update_plan_metadata\` (destination, summary), \`update_plan_body\` (nou body sense referències), \`delete_place\` per a cada lloc australià, \`update_checklist_item\` per a cada ítem que el mencioni. Si el plan té sub-plans afectats, recomana a l'usuari que obri el chat del sub-plan per fer-ho allà (cada chat opera només sobre el seu propi plan).
+Pots cridar diverses funcions en una sola resposta per cobrir-ho tot. Exemple, si l'usuari diu "treu Austràlia de tot": crida \`update_plan_metadata\` (destination, summary), \`update_plan_body\` (nou body sense referències), \`delete_place\` per a cada lloc australià, \`update_checklist_item\` per a cada ítem que el mencioni. Si hi ha sub-plans afectats, pots editar-los directament amb les funcions \`*_subplan*\` corresponents (passant el subplan_id) — ja no cal que l'usuari obri el chat del sub-plan.
 
 Quan cridis una funció, escriu també un MISSATGE BREU confirmant la proposta. L'usuari haurà de confirmar cadascuna abans que s'apliqui.`
 }
 
 ### 8. Quan no pots
-- Si l'usuari demana modificar coses d'un sub-plan o del pla pare, recorda-li que cada chat opera sobre el seu propi plan i que ho ha de fer des d'allà.
+- Sub-plans: SÍ que pots editar-los amb les funcions \`*_subplan*\` (en mode edició). Necessites el subplan_id del context — si no el tens, demana de quin sub-plan parla.
+- Pla pare: NO el pots editar des d'aquí; recorda a l'usuari que ho faci des del chat del pare.
 - Dades genuïnament absents: digues-ho i ofereix una aproximació o una acció.
 
 ### 9. To

@@ -1,11 +1,12 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { deletePhoto } from "@/lib/photo-actions";
 import type { PlanPhoto } from "@/lib/types";
 import { PhotoUploader } from "./photo-uploader";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export function PhotoGallery({
   planId,
@@ -16,15 +17,19 @@ export function PhotoGallery({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleDelete(photoId: string) {
-    if (!confirm("Esborrar aquesta foto?")) return;
+  function handleDelete() {
+    if (!confirmId) return;
+    setError(null);
     startTransition(async () => {
       try {
-        await deletePhoto(planId, photoId);
+        await deletePhoto(planId, confirmId);
+        setConfirmId(null);
         router.refresh();
       } catch (e) {
-        alert(e instanceof Error ? e.message : String(e));
+        setError(e instanceof Error ? e.message : String(e));
       }
     });
   }
@@ -75,10 +80,13 @@ export function PhotoGallery({
                 )}
                 <button
                   type="button"
-                  onClick={() => handleDelete(p.id)}
+                  onClick={() => {
+                    setError(null);
+                    setConfirmId(p.id);
+                  }}
                   disabled={pending}
                   aria-label="Esborrar foto"
-                  className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50 transition-opacity grid place-items-center h-8 w-8 rounded-full bg-black/40 hover:bg-peach-deep text-white backdrop-blur-sm"
+                  className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50 transition-opacity grid place-items-center h-10 w-10 sm:h-8 sm:w-8 rounded-full bg-black/40 hover:bg-peach-deep text-white backdrop-blur-sm"
                 >
                   <Trash2 className="h-4 w-4" strokeWidth={2} />
                 </button>
@@ -87,6 +95,23 @@ export function PhotoGallery({
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        title="Esborrar aquesta foto?"
+        description={
+          error ? (
+            <span className="text-peach-deep">{error}</span>
+          ) : (
+            "No es pot desfer."
+          )
+        }
+        confirmLabel="Esborrar"
+        destructive
+        busy={pending}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmId(null)}
+      />
     </section>
   );
 }
