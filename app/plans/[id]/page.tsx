@@ -26,6 +26,7 @@ import { PlanToc } from "@/components/plan-detail/plan-toc";
 import { SubPlansCard } from "@/components/plan-detail/sub-plans-card";
 import { SubPlansTimeline } from "@/components/plan-detail/sub-plans-timeline";
 import { ItineraryView } from "@/components/plan-detail/itinerary-view";
+import { SubChecklists, type SubChecklistGroup } from "@/components/plan-detail/sub-checklists";
 import { formatDateRange, formatMoney } from "@/lib/format";
 import { getChildPlanRefs, getPlanById } from "@/lib/plans";
 import { extractH2Headings } from "@/lib/toc";
@@ -93,6 +94,26 @@ export default async function PlanDetailPage({
   // Card de sub-plans visible si ja en té, o si és un viatge llarg (deep) on
   // sol tenir sentit afegir-ne.
   const showSubPlans = children.length > 0 || plan.type === "deep";
+
+  // Checklists dels sub-plans agrupades per país (vista agregada al pla pare).
+  // Els genèrics viuen a la checklist pròpia; aquí, els específics de cada país.
+  const childIds = children.map((c) => c.id);
+  const { data: childChecklistRows } =
+    childIds.length > 0
+      ? await supabaseForAuth
+          .from("checklist_items")
+          .select("id,text,done,plan_id")
+          .in("plan_id", childIds)
+      : { data: [] as Array<{ id: string; text: string; done: boolean; plan_id: string }> };
+  const subChecklistGroups: SubChecklistGroup[] = children
+    .map((c) => ({
+      planId: c.id,
+      title: c.title,
+      items: (childChecklistRows ?? [])
+        .filter((r) => r.plan_id === c.id)
+        .map((r) => ({ id: r.id as string, text: r.text as string, done: r.done as boolean })),
+    }))
+    .filter((g) => g.items.length > 0);
 
   // Estances disponibles:
   // - Resum sempre (la pestanya principal amb cos + sidebar).
@@ -202,6 +223,9 @@ export default async function PlanDetailPage({
                 <SubPlansCard parentId={plan.id} subPlans={children} />
               )}
               <Checklist planId={plan.id} items={plan.checklist} />
+              {subChecklistGroups.length > 0 && (
+                <SubChecklists groups={subChecklistGroups} />
+              )}
               <ExpenseTable
                 expenses={plan.expenses}
                 budgetTotal={plan.budgetTotal}
