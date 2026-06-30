@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { applyAiPlaceSuggestions, type SuggestedPlace } from "./ai-actions";
-import { assertCanCreatePlan } from "./quota-actions";
 import { createSupabaseServer } from "./supabase-server";
 import type { PlanStatus, PlanType } from "./types";
 
@@ -232,10 +231,7 @@ export async function createPlan(formData: FormData): Promise<void> {
   const pendingPlaces = parsePendingPlaces(formData.get("pendingPlacesJson"));
   const pendingChecklist = parsePendingChecklist(formData.get("pendingChecklistJson"));
 
-  // Quota: només per a plans pare. Els sub-plans no compten contra el límit.
-  if (!fields.parent_plan_id) {
-    await assertCanCreatePlan();
-  }
+  // M12: quota de plans pare (assertCanCreatePlan) pendent de reintegrar amb quota-actions.
 
   const base = slugify(fields.title);
   const id = await uniqueSlug(base);

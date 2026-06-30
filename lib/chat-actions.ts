@@ -2,7 +2,6 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { revalidatePath } from "next/cache";
-import { consumeQuota } from "./quota-actions";
 import { createSupabaseServer } from "./supabase-server";
 import {
   buildCopilotSystemPrompt,
@@ -93,8 +92,7 @@ export async function sendChatMessage(
     throw new Error("Missatge massa llarg (màx 4000 caràcters).");
   }
 
-  // Quota: copilot comparteix bucket amb polish text.
-  await consumeQuota("polish_text");
+  // M12: quota (consumeQuota "polish_text") pendent de reintegrar amb quota-actions.
 
   const supabase = await createSupabaseServer();
 

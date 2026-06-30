@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { assertCanAddPhoto } from "./quota-actions";
 import { createSupabaseServer } from "./supabase-server";
 
 /**
@@ -16,7 +15,7 @@ export async function registerPhoto(
   mimeType: string,
   caption?: string,
 ): Promise<void> {
-  await assertCanAddPhoto(planId);
+  // M12: quota (assertCanAddPhoto) pendent de reintegrar amb quota-actions.
   const supabase = await createSupabaseServer();
   const { error } = await supabase.from("plan_photos").insert({
     id: photoId,

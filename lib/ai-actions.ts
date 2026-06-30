@@ -5,7 +5,6 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServer } from "./supabase-server";
 import { geocodeSearch } from "./place-actions";
 import { downloadPexelsImage, searchPexelsTop } from "./pexels-actions";
-import { consumeQuota } from "./quota-actions";
 import type { PlanType } from "./types";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY;
@@ -320,7 +319,7 @@ export async function polishWithAi(
   planId: string,
 ): Promise<ActionResult<PolishSuggestions>> {
   try {
-    await consumeQuota("polish_text");
+    // M12: quota (consumeQuota "polish_text") pendent de reintegrar.
     const supabase = await createSupabaseServer();
 
     const { data: plan, error: planError } = await supabase
@@ -374,7 +373,7 @@ export async function polishWithAiFromDraft(
     if (!draft.summary.trim()) throw new Error("Necessites un resum per a polish.");
     if (!draft.body.trim()) throw new Error("Necessites una mica de cos per a polish.");
 
-    await consumeQuota("polish_text");
+    // M12: quota (consumeQuota "polish_text") pendent de reintegrar.
     const userMessage = buildUserMessage(draft, "(cap)", "(cap)");
     return { ok: true, data: await callGemini(userMessage) };
   } catch (e) {
@@ -588,7 +587,7 @@ async function polishImagesImpl(
     throw new Error("Necessites una mica de cos per a polish d'imatges.");
   }
 
-  await consumeQuota("polish_images");
+  // M12: quota (consumeQuota "polish_images") pendent de reintegrar.
   const supabase = await createSupabaseServer();
 
   const { data: plan, error: planError } = await supabase
