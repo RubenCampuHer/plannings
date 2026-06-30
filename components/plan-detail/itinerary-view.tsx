@@ -1,5 +1,5 @@
 import { MapPin, ArrowDown } from "lucide-react";
-import { formatDate, formatShortDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import type { Place } from "@/lib/types";
 
 const MONTHS_CA = [
@@ -18,6 +18,30 @@ function dayMonth(iso: string): string {
 function weekdayCa(iso: string): string {
   const w = WEEKDAYS_CA[new Date(iso + "T00:00:00Z").getUTCDay()];
   return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
+function mapsUrl(p: Place): string {
+  return `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
+}
+
+/** Un lloc com a "pastilla" que enllaça al Google Maps (coordenades exactes). */
+function PlaceChip({ place, muted }: { place: Place; muted?: boolean }) {
+  return (
+    <a
+      href={mapsUrl(place)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={place.notes ? `${place.notes} · obre al Maps` : "Obre al Google Maps"}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm transition-colors hover:border-peach hover:text-peach-deep ${
+        muted
+          ? "border-ink-faint/40 bg-cream-soft/60 text-ink"
+          : "border-ink-faint/40 bg-cream text-ink"
+      }`}
+    >
+      <MapPin className="h-3.5 w-3.5 text-peach-deep shrink-0" strokeWidth={2} />
+      {place.name}
+    </a>
+  );
 }
 
 function diffNights(startIso: string, endIso: string): number {
@@ -132,13 +156,8 @@ export function ItineraryView({ places }: { places: Place[] }) {
                   </div>
                   <ul className="mt-2 flex flex-wrap gap-1.5">
                     {g.places.map((p) => (
-                      <li
-                        key={p.id}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-cream border border-ink-faint/40 px-2.5 py-1 text-sm text-ink"
-                        title={p.notes ?? undefined}
-                      >
-                        <MapPin className="h-3.5 w-3.5 text-peach-deep shrink-0" strokeWidth={2} />
-                        {p.name}
+                      <li key={p.id}>
+                        <PlaceChip place={p} />
                       </li>
                     ))}
                   </ul>
@@ -162,15 +181,8 @@ export function ItineraryView({ places }: { places: Place[] }) {
           </h3>
           <ul className="flex flex-wrap gap-2">
             {noZone.map((p) => (
-              <li
-                key={p.id}
-                className="inline-flex items-center gap-1.5 rounded-full border border-ink-faint/40 bg-cream-soft/60 px-3 py-1.5 text-sm text-ink"
-              >
-                <MapPin className="h-3.5 w-3.5 text-ink-soft" strokeWidth={2} />
-                {p.name}
-                {p.arrivalDate && (
-                  <span className="text-xs text-ink-soft">· {formatShortDate(p.arrivalDate)}</span>
-                )}
+              <li key={p.id}>
+                <PlaceChip place={p} muted />
               </li>
             ))}
           </ul>
@@ -226,13 +238,8 @@ function ByDateView({ places }: { places: Place[] }) {
           </div>
           <ul className="flex flex-wrap gap-1.5 pl-12">
             {day.places.map((p) => (
-              <li
-                key={p.id}
-                className="inline-flex items-center gap-1.5 rounded-full bg-cream-soft border border-ink-faint/40 px-2.5 py-1 text-sm text-ink"
-                title={p.notes ?? undefined}
-              >
-                <MapPin className="h-3.5 w-3.5 text-peach-deep shrink-0" strokeWidth={2} />
-                {p.name}
+              <li key={p.id}>
+                <PlaceChip place={p} />
               </li>
             ))}
           </ul>
@@ -245,12 +252,8 @@ function ByDateView({ places }: { places: Place[] }) {
           </h3>
           <ul className="flex flex-wrap gap-2">
             {undated.map((p) => (
-              <li
-                key={p.id}
-                className="inline-flex items-center gap-1.5 rounded-full border border-ink-faint/40 bg-cream-soft/60 px-3 py-1.5 text-sm text-ink"
-              >
-                <MapPin className="h-3.5 w-3.5 text-ink-soft" strokeWidth={2} />
-                {p.name}
+              <li key={p.id}>
+                <PlaceChip place={p} muted />
               </li>
             ))}
           </ul>
