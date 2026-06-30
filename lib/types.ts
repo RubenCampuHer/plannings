@@ -10,6 +10,8 @@ export type Place = {
   notes?: string;
   orderIndex: number;
   arrivalDate?: string;
+  /** Zona/etapa geogràfica a què pertany el lloc (ex. "Siem Reap"). */
+  zone?: string;
 };
 
 export type ChecklistItem = {

@@ -189,4 +189,13 @@ export const CASES: EvalCase[] = [
     ideal_behavior:
       "És una pregunta, no una ordre. NO ha de cridar cap funció *_subplan. Hauria de respondre amb suggeriments en text basant-se en el body/checklist del sub-plan.",
   },
+  {
+    mode: "edicio",
+    id: "command-organize-zones",
+    question:
+      "Organitza els llocs d'aquest pla per zones geogràfiques (agrupa els que són a la mateixa ciutat/àrea).",
+    focus: ["function-call"],
+    ideal_behavior:
+      "Hauria de cridar set_place_zone diverses vegades (una per lloc) amb els place_id del context i un nom de zona coherent per als llocs propers (mateixa ciutat/àrea). Text breu confirmant. NO ha d'inventar place_id.",
+  },
 ];

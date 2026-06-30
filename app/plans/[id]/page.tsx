@@ -100,8 +100,8 @@ export default async function PlanDetailPage({
   // - Àlbum: per a viatges/escapades sempre (perquè es pot pujar des d'aquí encara que estigui buit);
   //   per a plans `day` només quan ja hi ha fotos.
   const hasMapa = plan.places.length > 0;
-  // L'itinerari té sentit quan algun lloc té data assignada.
-  const hasItinerari = plan.places.some((p) => p.arrivalDate);
+  // L'itinerari té sentit quan algun lloc té zona o data assignada.
+  const hasItinerari = plan.places.some((p) => p.zone || p.arrivalDate);
   const hasAlbum = plan.photos.length > 0 || plan.type !== "day";
   const available: Room[] = [
     "resum",

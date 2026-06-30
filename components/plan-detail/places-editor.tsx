@@ -9,6 +9,7 @@ import {
   geocodeSearch,
   reorderPlaces,
   setPlaceArrivalDate,
+  setPlaceZone,
   type GeocodeResult,
 } from "@/lib/place-actions";
 import type { Place } from "@/lib/types";
@@ -105,18 +106,36 @@ export function PlacesEditor({
     });
   }
 
-  function setDate(placeId: string, value: string) {
+  function setZone(placeId: string, value: string) {
+    const zone = value.trim() || null;
+    const before = places;
+    setError(null);
+    setPlaces((prev) =>
+      prev.map((p) => (p.id === placeId ? { ...p, zone: zone ?? undefined } : p)),
+    );
+    startTransition(async () => {
+      try {
+        await setPlaceZone(planId, placeId, zone);
+      } catch (e) {
+        setPlaces(before);
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    });
+  }
+
+  // Posa la mateixa data a tots els llocs d'una zona (una sola acció).
+  function setGroupDate(ids: string[], value: string) {
     const date = value || null;
     const before = places;
     setError(null);
     setPlaces((prev) =>
       prev.map((p) =>
-        p.id === placeId ? { ...p, arrivalDate: date ?? undefined } : p,
+        ids.includes(p.id) ? { ...p, arrivalDate: date ?? undefined } : p,
       ),
     );
     startTransition(async () => {
       try {
-        await setPlaceArrivalDate(planId, placeId, date);
+        await Promise.all(ids.map((id) => setPlaceArrivalDate(planId, id, date)));
       } catch (e) {
         setPlaces(before);
         setError(e instanceof Error ? e.message : String(e));
@@ -145,6 +164,26 @@ export function PlacesEditor({
       }
     });
   }
+
+  // Agrupa els llocs per zona, conservant l'índex global (per a reordenar) i
+  // l'ordre d'aparició. La zona buida ("Sense zona") va sempre al final.
+  const indexed = places.map((p, i) => ({ p, i }));
+  const groupKeys: string[] = [];
+  const groupMap = new Map<string, { p: Place; i: number }[]>();
+  for (const it of indexed) {
+    const key = it.p.zone?.trim() ? it.p.zone.trim() : "";
+    if (!groupMap.has(key)) {
+      groupMap.set(key, []);
+      groupKeys.push(key);
+    }
+    groupMap.get(key)!.push(it);
+  }
+  const orderedKeys = [
+    ...groupKeys.filter((k) => k),
+    ...(groupMap.has("") ? [""] : []),
+  ];
+  const groups = orderedKeys.map((key) => ({ key, items: groupMap.get(key)! }));
+  const zoneNames = groupKeys.filter((k) => k);
 
   return (
     <div className="space-y-5">
@@ -199,72 +238,113 @@ export function PlacesEditor({
         )}
       </div>
 
-      {/* Existing places */}
+      {/* Llocs existents, agrupats per zona */}
       {places.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <p className="text-xs uppercase tracking-wider text-ink-soft">
-            {places.length} {places.length === 1 ? "lloc" : "llocs"}
+            {places.length} {places.length === 1 ? "lloc" : "llocs"} · organitza per zones
           </p>
-          <ul className="space-y-1.5">
-            {places.map((p, i) => {
-              const isTemp = p.id.startsWith("temp-");
-              const isFirst = i === 0;
-              const isLast = i === places.length - 1;
-              return (
-                <li
-                  key={p.id}
-                  className="flex items-center gap-3 px-3 py-2 rounded-md border border-ink-faint/30 bg-cream-soft/60 group"
-                >
-                  <span className="grid place-items-center h-6 w-6 rounded-full bg-peach text-white text-xs font-medium shrink-0">
-                    {i + 1}
+          {/* Suggeriments de zona ja existents (autocompletat). */}
+          <datalist id={`zones-${planId}`}>
+            {zoneNames.map((z) => (
+              <option key={z} value={z} />
+            ))}
+          </datalist>
+
+          {groups.map((g) => {
+            const ids = g.items.map((it) => it.p.id);
+            const dateSet = new Set(g.items.map((it) => it.p.arrivalDate ?? ""));
+            const commonDate = dateSet.size === 1 ? [...dateSet][0] : "";
+            return (
+              <div
+                key={g.key || "__none"}
+                className="rounded-md border border-ink-faint/30 bg-cream-soft/40 overflow-hidden"
+              >
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-faint/30 bg-cream-soft/60">
+                  <span className="font-serif font-semibold text-ink text-sm flex-1 truncate">
+                    {g.key || "Sense zona"}
                   </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-ink truncate">{p.name}</span>
-                    {p.country && (
-                      <span className="block text-xs text-ink-soft">{p.country}</span>
-                    )}
-                    <input
-                      type="date"
-                      value={p.arrivalDate ?? ""}
-                      onChange={(e) => setDate(p.id, e.target.value)}
-                      disabled={isTemp}
-                      aria-label={`Data per a ${p.name}`}
-                      className="mt-1 h-8 px-2 rounded-md border border-ink-faint/50 bg-cream text-ink-soft text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-peach/30 disabled:opacity-50"
-                    />
+                  <input
+                    type="date"
+                    value={commonDate}
+                    onChange={(e) => setGroupDate(ids, e.target.value)}
+                    aria-label={`Data de ${g.key || "sense zona"}`}
+                    title="Aplica la data a tota la zona"
+                    className="h-8 px-2 rounded-md border border-ink-faint/50 bg-cream text-ink-soft text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-peach/30"
+                  />
+                  <span className="text-xs text-ink-soft tabular-nums shrink-0">
+                    {g.items.length}
                   </span>
-                  <div className="flex items-center gap-1 sm:gap-0.5 opacity-70 sm:opacity-40 sm:group-hover:opacity-100 transition">
-                    <button
-                      type="button"
-                      onClick={() => move(i, "up")}
-                      disabled={isTemp || isFirst}
-                      className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
-                      aria-label={`Pujar ${p.name}`}
-                    >
-                      <ArrowUp className="h-4 w-4" strokeWidth={2} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => move(i, "down")}
-                      disabled={isTemp || isLast}
-                      className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
-                      aria-label={`Baixar ${p.name}`}
-                    >
-                      <ArrowDown className="h-4 w-4" strokeWidth={2} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(p.id)}
-                      disabled={isTemp}
-                      className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-peach-deep transition disabled:cursor-wait"
-                      aria-label={`Esborrar ${p.name}`}
-                    >
-                      <Trash2 className="h-4 w-4" strokeWidth={2} />
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                </div>
+                <ul className="divide-y divide-ink-faint/20">
+                  {g.items.map(({ p, i }) => {
+                    const isTemp = p.id.startsWith("temp-");
+                    const isFirst = i === 0;
+                    const isLast = i === places.length - 1;
+                    return (
+                      <li
+                        key={p.id}
+                        className="flex items-center gap-2 px-3 py-2 group"
+                      >
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-medium text-ink truncate">
+                            {p.name}
+                            {p.country && (
+                              <span className="text-xs text-ink-soft font-normal"> · {p.country}</span>
+                            )}
+                          </span>
+                          <input
+                            list={`zones-${planId}`}
+                            defaultValue={p.zone ?? ""}
+                            placeholder="zona…"
+                            disabled={isTemp}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim() || null;
+                              if (v !== (p.zone ?? null)) setZone(p.id, e.target.value);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") e.currentTarget.blur();
+                            }}
+                            aria-label={`Zona de ${p.name}`}
+                            className="mt-1 h-7 px-2 rounded border border-ink-faint/50 bg-cream text-ink-soft text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-peach/30 disabled:opacity-50"
+                          />
+                        </span>
+                        <div className="flex items-center gap-1 sm:gap-0.5 opacity-70 sm:opacity-40 sm:group-hover:opacity-100 transition">
+                          <button
+                            type="button"
+                            onClick={() => move(i, "up")}
+                            disabled={isTemp || isFirst}
+                            className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
+                            aria-label={`Pujar ${p.name}`}
+                          >
+                            <ArrowUp className="h-4 w-4" strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => move(i, "down")}
+                            disabled={isTemp || isLast}
+                            className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition"
+                            aria-label={`Baixar ${p.name}`}
+                          >
+                            <ArrowDown className="h-4 w-4" strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(p.id)}
+                            disabled={isTemp}
+                            className="grid place-items-center min-h-[40px] min-w-[40px] sm:min-h-0 sm:min-w-0 sm:p-1 text-ink-soft hover:text-peach-deep transition disabled:cursor-wait"
+                            aria-label={`Esborrar ${p.name}`}
+                          >
+                            <Trash2 className="h-4 w-4" strokeWidth={2} />
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </div>
       )}
 

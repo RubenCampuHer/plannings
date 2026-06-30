@@ -133,6 +133,39 @@ export async function resolveParentPlan(
   return { ok: true, row: rowToChildPlan(row) };
 }
 
+export type PlaceScope =
+  | { ok: true; place: { id: string; name: string; plan_id: string } }
+  | { ok: false; message: string };
+
+/**
+ * Valida que `placeId` pertany a l'ABAST del pla actual: el mateix pla, el seu
+ * pare, un fill o un net. Per a `set_place_zone` (opera per place_id).
+ */
+export async function placeInScope(
+  supabase: Supa,
+  planId: string,
+  placeId: string,
+): Promise<PlaceScope> {
+  if (!placeId) return { ok: false, message: "Manca place_id." };
+  const { data: pl } = await supabase
+    .from("places")
+    .select("id,name,plan_id")
+    .eq("id", placeId)
+    .maybeSingle();
+  if (!pl) return { ok: false, message: "El lloc no existeix." };
+  const owner = pl.plan_id as string;
+  const place = { id: pl.id as string, name: pl.name as string, plan_id: owner };
+  if (owner === planId) return { ok: true, place };
+  const parent = await resolveParentPlan(supabase, planId);
+  if (parent.ok && parent.row.id === owner) return { ok: true, place };
+  const desc = await resolveDescendantPlan(supabase, planId, owner);
+  if (desc.ok) return { ok: true, place };
+  return {
+    ok: false,
+    message: "El lloc no pertany a aquest pla ni als seus sub-plans/pare.",
+  };
+}
+
 // =====================================================================
 // Generació d'una resposta del copilot.
 // =====================================================================
@@ -720,6 +753,31 @@ async function resolveProposalPreviews(
             return;
           }
           // add_parent_checklist_item: només cal l'etiqueta del pare.
+          return;
+        }
+
+        // ---------- Organitzar per zona ----------
+        if (p.function_name === "set_place_zone") {
+          const placeId =
+            typeof p.arguments.place_id === "string" ? p.arguments.place_id : "";
+          const scope = await placeInScope(supabase, planId, placeId);
+          if (!scope.ok) {
+            p.status = "failed";
+            p.result_message = scope.message;
+            return;
+          }
+          const zone = typeof p.arguments.zone === "string" ? p.arguments.zone.trim() : "";
+          if (!zone) {
+            p.status = "failed";
+            p.result_message = "Manca el nom de la zona.";
+            return;
+          }
+          const date =
+            typeof p.arguments.arrival_date === "string" &&
+            /^\d{4}-\d{2}-\d{2}$/.test(p.arguments.arrival_date)
+              ? p.arguments.arrival_date
+              : undefined;
+          p.preview = { place_zone: { name: scope.place.name, zone, date } };
           return;
         }
       } catch (e) {

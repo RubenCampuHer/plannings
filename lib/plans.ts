@@ -49,6 +49,7 @@ type PlaceRow = {
   notes: string | null;
   order_index: number;
   arrival_date: string | null;
+  zone: string | null;
 };
 
 type ChecklistRow = {
@@ -126,6 +127,7 @@ function rowToPlace(r: PlaceRow): Place {
     notes: r.notes ?? undefined,
     orderIndex: r.order_index,
     arrivalDate: r.arrival_date ?? undefined,
+    zone: r.zone ?? undefined,
   };
 }
 

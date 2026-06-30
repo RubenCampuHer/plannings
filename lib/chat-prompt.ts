@@ -36,7 +36,12 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
         arrival_date: {
           type: Type.STRING,
           description:
-            "Data de visita en format YYYY-MM-DD (opcional). Posa-la si l'usuari indica quan visita el lloc — alimenta l'itinerari per dia.",
+            "Data de visita en format YYYY-MM-DD (opcional). Posa-la si l'usuari indica quan visita el lloc — alimenta l'itinerari.",
+        },
+        zone: {
+          type: Type.STRING,
+          description:
+            "Zona/etapa geogràfica del lloc (ex. 'Siem Reap', 'Bangkok') (opcional). Agrupa l'itinerari per zones.",
         },
       },
       required: ["name", "search_query"],
@@ -322,6 +327,10 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
           description:
             "Data de visita en format YYYY-MM-DD (opcional) per a l'itinerari del sub-plan.",
         },
+        zone: {
+          type: Type.STRING,
+          description: "Zona/etapa geogràfica del lloc (opcional).",
+        },
       },
       required: ["subplan_id", "name", "search_query"],
     },
@@ -439,6 +448,10 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
           type: Type.STRING,
           description: "Data YYYY-MM-DD (opcional).",
         },
+        zone: {
+          type: Type.STRING,
+          description: "Zona/etapa geogràfica del lloc (opcional).",
+        },
       },
       required: ["name", "search_query"],
     },
@@ -456,6 +469,34 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
         },
       },
       required: ["place_id"],
+    },
+  },
+  // ===================================================================
+  // Organitzar la ruta per ZONES. Assigna una zona (etapa geogràfica) a un
+  // lloc EXISTENT (del pla actual, sub-plans, nets o pare). Opera per place_id.
+  // ===================================================================
+  {
+    name: "set_place_zone",
+    description:
+      "Assigna una zona/etapa geogràfica a un lloc EXISTENT pel seu place_id (ex. agrupar tots els llocs de Siem Reap a la zona 'Siem Reap'). Opcionalment fixa la data d'arribada de la zona. Usa-la per organitzar la ruta per zones. Els place_id els tens al context (llistes de llocs del pla, sub-plans, nets o pare).",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        place_id: {
+          type: Type.STRING,
+          description: "ID del lloc tal com apareix al context.",
+        },
+        zone: {
+          type: Type.STRING,
+          description: "Nom de la zona/etapa (ex. 'Siem Reap', 'Bangkok').",
+        },
+        arrival_date: {
+          type: Type.STRING,
+          description:
+            "Data d'inici de la zona en format YYYY-MM-DD (opcional). Posa la mateixa data a tots els llocs d'una mateixa zona.",
+        },
+      },
+      required: ["place_id", "zone"],
     },
   },
 ];
@@ -481,7 +522,8 @@ export type ProposalFunctionName =
   | "add_parent_checklist_item"
   | "update_parent_checklist_item"
   | "add_parent_place"
-  | "delete_parent_place";
+  | "delete_parent_place"
+  | "set_place_zone";
 
 /** Conjunt de noms de funcions que operen sobre un sub-plan (porten subplan_id). */
 export const SUBPLAN_FUNCTION_NAMES: ReadonlySet<ProposalFunctionName> = new Set([
@@ -527,6 +569,12 @@ export type Proposal = {
     parent?: {
       id: string;
       title: string;
+    };
+    /** set_place_zone: lloc + zona (+data) que s'assignaran. */
+    place_zone?: {
+      name: string;
+      zone: string;
+      date?: string;
     };
     /** add_place: ubicació geocodificada. */
     geocoded?: {
@@ -796,6 +844,11 @@ Els **NETS** (sub-plans d'un sub-plan) s'editen igual: amb les funcions \`*_subp
 - \`add_parent_checklist_item(text)\` / \`update_parent_checklist_item(item_id, text?, done?)\`
 - \`add_parent_place(name, search_query, why?, arrival_date?)\` / \`delete_parent_place(place_id)\`
 Cap d'aquestes porta id de pla (el pare és únic); l'item_id/place_id els tens a la secció del pare.
+
+**ITINERARI PER ZONES**:
+- \`set_place_zone(place_id, zone, arrival_date?)\` — assigna una zona/etapa a un lloc EXISTENT (de qualsevol nivell: pla actual, sub-plans, nets, pare). Usa-la per organitzar la ruta per zones; crida-la diverses vegades (una per lloc) i posa la MATEIXA \`arrival_date\` a tots els llocs d'una mateixa zona.
+- A \`add_place\`/\`add_subplan_place\`/\`add_parent_place\` pots passar \`zone\` directament en crear el lloc.
+- Exemple: "organitza Cambodja per zones" → \`set_place_zone\` per a cada lloc d'Angkor amb zone="Siem Reap" i la resta amb zone="Phnom Penh".
 
 Els ids (subplan_id, item_id, place_id) els tens al context (sota cada sub-plan, net o el pare). NO els inventis.
 

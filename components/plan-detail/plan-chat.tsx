@@ -665,6 +665,12 @@ function describeProposal(p: Proposal): {
         Icon: Trash2,
       };
     }
+    case "set_place_zone": {
+      const pz = p.preview?.place_zone;
+      const name = pz?.name ?? "lloc";
+      const zone = pz?.zone ?? String(args.zone ?? "?");
+      return { title: `Assignar "${name}" a la zona "${zone}"`, Icon: MapPin };
+    }
   }
 }
 
@@ -796,6 +802,12 @@ function ProposalDetails({ proposal }: { proposal: Proposal }) {
           {renderPlaceDelete(args, proposal.preview?.place_before)}
         </div>
       );
+    case "set_place_zone": {
+      const pz = proposal.preview?.place_zone;
+      return pz?.date ? (
+        <div className="text-xs text-ink-soft mt-1">📅 {pz.date}</div>
+      ) : null;
+    }
   }
 }
 

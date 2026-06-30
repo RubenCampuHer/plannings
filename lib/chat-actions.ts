@@ -9,6 +9,7 @@ import {
   persistCopilotExchange,
   resolveDescendantPlan,
   resolveParentPlan,
+  placeInScope,
 } from "./copilot-engine";
 
 export type ChatMessage = {
@@ -104,6 +105,8 @@ async function executeAddPlace(
     /^\d{4}-\d{2}-\d{2}$/.test(args.arrival_date)
       ? args.arrival_date
       : undefined;
+  const zone =
+    typeof args.zone === "string" && args.zone.trim() ? args.zone.trim() : undefined;
   if (!name || !query) {
     return { success: false, message: "Manquen arguments (name + search_query)." };
   }
@@ -139,6 +142,7 @@ async function executeAddPlace(
       lng: resolved.lng,
       notes: why,
       arrivalDate,
+      zone,
     });
   } catch (e) {
     return {
@@ -454,6 +458,38 @@ async function withResolvedParent(
   return result;
 }
 
+async function executeSetPlaceZone(
+  planId: string,
+  args: Record<string, unknown>,
+): Promise<ExecuteResult> {
+  const placeId = typeof args.place_id === "string" ? args.place_id : "";
+  const zone = typeof args.zone === "string" ? args.zone.trim() : "";
+  if (!placeId || !zone) {
+    return { success: false, message: "Manquen place_id o zone." };
+  }
+  const arrivalDate =
+    typeof args.arrival_date === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(args.arrival_date)
+      ? args.arrival_date
+      : undefined;
+  const supabase = await createSupabaseServer();
+  const scope = await placeInScope(supabase, planId, placeId);
+  if (!scope.ok) return { success: false, message: scope.message };
+
+  const patch: Record<string, unknown> = { zone };
+  if (arrivalDate) patch.arrival_date = arrivalDate;
+  const { error } = await supabase.from("places").update(patch).eq("id", placeId);
+  if (error) {
+    return { success: false, message: `Error assignant zona: ${error.message}` };
+  }
+  // El lloc pot ser d'un sub-plan/pare: revalida el seu propi plan.
+  revalidatePath(`/plans/${scope.place.plan_id}`);
+  return {
+    success: true,
+    message: `"${scope.place.name}" → zona "${zone}"${arrivalDate ? ` (${arrivalDate})` : ""}.`,
+  };
+}
+
 async function executeProposal(
   planId: string,
   proposal: Proposal,
@@ -521,6 +557,8 @@ async function executeProposal(
       return withResolvedParent(planId, (parentId) =>
         executeDeletePlace(parentId, proposal.arguments),
       );
+    case "set_place_zone":
+      return executeSetPlaceZone(planId, proposal.arguments);
     default:
       return { success: false, message: `Funció desconeguda: ${(proposal as { function_name: string }).function_name}` };
   }

@@ -67,6 +67,7 @@ export async function addPlace(planId: string, place: {
   lng: number;
   notes?: string;
   arrivalDate?: string;
+  zone?: string;
 }): Promise<void> {
   const supabase = await createSupabaseServer();
 
@@ -89,6 +90,7 @@ export async function addPlace(planId: string, place: {
     lng: place.lng,
     notes: place.notes ?? null,
     arrival_date: place.arrivalDate ?? null,
+    zone: place.zone ?? null,
     order_index: nextIndex,
   });
   if (error) throw new Error(`Afegir lloc: ${error.message}`);
@@ -116,6 +118,28 @@ export async function setPlaceArrivalDate(
     .eq("id", placeId)
     .eq("plan_id", planId);
   if (error) throw new Error(`Desar data del lloc: ${error.message}`);
+
+  revalidatePath(`/plans/${planId}`);
+  revalidatePath(`/plans/${planId}/edit`);
+}
+
+/**
+ * Assigna (o esborra, amb zone=null) la zona/etapa d'un lloc. Valida que el
+ * lloc pertany al pla abans d'escriure.
+ */
+export async function setPlaceZone(
+  planId: string,
+  placeId: string,
+  zone: string | null,
+): Promise<void> {
+  const value = zone && zone.trim() ? zone.trim() : null;
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase
+    .from("places")
+    .update({ zone: value })
+    .eq("id", placeId)
+    .eq("plan_id", planId);
+  if (error) throw new Error(`Desar zona del lloc: ${error.message}`);
 
   revalidatePath(`/plans/${planId}`);
   revalidatePath(`/plans/${planId}/edit`);

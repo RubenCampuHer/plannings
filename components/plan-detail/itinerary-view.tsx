@@ -1,76 +1,221 @@
-import { MapPin } from "lucide-react";
-import { formatDate } from "@/lib/format";
+import { MapPin, ArrowDown } from "lucide-react";
+import { formatDate, formatShortDate } from "@/lib/format";
 import type { Place } from "@/lib/types";
 
+const MONTHS_CA = [
+  "gener", "febrer", "març", "abril", "maig", "juny",
+  "juliol", "agost", "setembre", "octubre", "novembre", "desembre",
+];
 const WEEKDAYS_CA = [
-  "diumenge",
-  "dilluns",
-  "dimarts",
-  "dimecres",
-  "dijous",
-  "divendres",
-  "dissabte",
+  "diumenge", "dilluns", "dimarts", "dimecres", "dijous", "divendres", "dissabte",
 ];
 
+function dayMonth(iso: string): string {
+  const d = new Date(iso + "T00:00:00Z");
+  return `${d.getUTCDate()} ${MONTHS_CA[d.getUTCMonth()].slice(0, 3)}`;
+}
+
 function weekdayCa(iso: string): string {
-  const w = WEEKDAYS_CA[new Date(iso).getDay()];
+  const w = WEEKDAYS_CA[new Date(iso + "T00:00:00Z").getUTCDay()];
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
 
-type Day = { date: string; places: Place[] };
+function diffNights(startIso: string, endIso: string): number {
+  const a = new Date(startIso + "T00:00:00Z").getTime();
+  const b = new Date(endIso + "T00:00:00Z").getTime();
+  return Math.max(0, Math.round((b - a) / 86400000));
+}
+
+type ZoneGroup = {
+  zone: string;
+  places: Place[];
+  /** Data d'inici (mín. arrival_date dels llocs de la zona), si n'hi ha. */
+  start?: string;
+};
 
 /**
- * Estança "Itinerari": agrupa els llocs del pla per dia d'arribada (la data viu
- * a `Place.arrivalDate`). Perifèric — NO toca la prosa del cos. Server component
- * pur: l'ordenació és determinista a render time.
+ * Estança "Itinerari": agrupa els llocs per ZONA/etapa (camp `Place.zone`).
+ * Les zones s'ordenen per la seva data d'inici; les nits i el rang es deriven
+ * de la data de la zona següent. Perifèric — no toca la prosa del cos.
  */
 export function ItineraryView({ places }: { places: Place[] }) {
+  const withZone = places.filter((p) => p.zone && p.zone.trim());
+
+  // Fallback: si encara no hi ha cap zona assignada però sí dates, agrupem per
+  // dia (comportament previ). Evita regressió abans d'aplicar zones.
+  if (withZone.length === 0 && places.some((p) => p.arrivalDate)) {
+    return <ByDateView places={places} />;
+  }
+
+  const noZone = places
+    .filter((p) => !p.zone || !p.zone.trim())
+    .sort((a, b) => a.orderIndex - b.orderIndex);
+
+  // Agrupa per zona.
+  const byZone = new Map<string, Place[]>();
+  for (const p of withZone) {
+    const key = p.zone!.trim();
+    if (!byZone.has(key)) byZone.set(key, []);
+    byZone.get(key)!.push(p);
+  }
+
+  const groups: ZoneGroup[] = [...byZone.entries()].map(([zone, ps]) => {
+    const dated = ps.filter((p) => p.arrivalDate).map((p) => p.arrivalDate!);
+    const start = dated.length ? dated.sort()[0] : undefined;
+    return {
+      zone,
+      start,
+      places: ps.sort((a, b) => a.orderIndex - b.orderIndex),
+    };
+  });
+
+  // Ordena: primer per data d'inici (les sense data, al final per order_index).
+  groups.sort((a, b) => {
+    if (a.start && b.start) return a.start.localeCompare(b.start);
+    if (a.start) return -1;
+    if (b.start) return 1;
+    return a.places[0].orderIndex - b.places[0].orderIndex;
+  });
+
+  if (groups.length === 0 && noZone.length === 0) {
+    return (
+      <p className="text-sm text-ink-soft">
+        Encara no hi ha llocs. Afegeix-ne des de l&apos;editor i assigna&apos;ls una
+        zona per organitzar l&apos;itinerari per etapes.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <header className="mb-8">
+        <h2 className="font-serif text-2xl font-semibold">L&apos;itinerari</h2>
+        <p className="text-sm text-ink-soft mt-1">
+          {groups.length > 0
+            ? `${groups.length} ${groups.length === 1 ? "zona" : "zones"} en ruta`
+            : "Assigna una zona als llocs des de l'editor per veure les etapes."}
+        </p>
+      </header>
+
+      {groups.length > 0 && (
+        <div className="relative pl-8">
+          {/* Rail vertical del viatge. */}
+          <span
+            aria-hidden
+            className="absolute left-[10px] top-2 bottom-2 border-l-2 border-dotted border-peach/50"
+          />
+          {groups.map((g, i) => {
+            const next = groups[i + 1];
+            // Rang: de la data de la zona fins a la de la següent (− 1 dia).
+            let meta: string | null = null;
+            if (g.start && next?.start) {
+              const nights = diffNights(g.start, next.start);
+              meta = `${dayMonth(g.start)}–${dayMonth(next.start)} · ${nights} ${nights === 1 ? "nit" : "nits"}`;
+            } else if (g.start) {
+              meta = `des del ${dayMonth(g.start)}`;
+            }
+            return (
+              <section key={g.zone} className="relative pb-6 last:pb-0">
+                <span className="absolute -left-8 top-1 grid place-items-center h-[22px] w-[22px] rounded-full bg-peach text-white text-[11px] font-bold font-serif border-[3px] border-cream shadow-[0_0_0_1px_var(--color-ink-faint)]">
+                  {i + 1}
+                </span>
+                <div className="rounded-[var(--radius-card)] border border-ink-faint/30 bg-cream-soft/50 px-4 py-3">
+                  <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                    <h3 className="font-serif text-lg font-semibold text-ink leading-tight">
+                      {g.zone}
+                    </h3>
+                    {meta && (
+                      <span className="font-hand text-base text-peach-deep -rotate-1 whitespace-nowrap">
+                        {meta}
+                      </span>
+                    )}
+                  </div>
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {g.places.map((p) => (
+                      <li
+                        key={p.id}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-cream border border-ink-faint/40 px-2.5 py-1 text-sm text-ink"
+                        title={p.notes ?? undefined}
+                      >
+                        <MapPin className="h-3.5 w-3.5 text-peach-deep shrink-0" strokeWidth={2} />
+                        {p.name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {next && (
+                  <div className="flex items-center gap-1.5 text-xs text-dusty-deep mt-3 pl-0.5">
+                    <ArrowDown className="h-3.5 w-3.5" strokeWidth={2} />
+                    cap a {next.zone}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {noZone.length > 0 && (
+        <section className="mt-8">
+          <h3 className="font-serif text-base font-semibold text-ink-soft mb-3">
+            Sense zona assignada
+          </h3>
+          <ul className="flex flex-wrap gap-2">
+            {noZone.map((p) => (
+              <li
+                key={p.id}
+                className="inline-flex items-center gap-1.5 rounded-full border border-ink-faint/40 bg-cream-soft/60 px-3 py-1.5 text-sm text-ink"
+              >
+                <MapPin className="h-3.5 w-3.5 text-ink-soft" strokeWidth={2} />
+                {p.name}
+                {p.arrivalDate && (
+                  <span className="text-xs text-ink-soft">· {formatShortDate(p.arrivalDate)}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Fallback per dia: quan encara no hi ha zones assignades però sí dates.
+ * Agrupa els llocs per dia d'arribada.
+ */
+function ByDateView({ places }: { places: Place[] }) {
   const dated = places.filter((p) => p.arrivalDate);
   const undated = places
     .filter((p) => !p.arrivalDate)
     .sort((a, b) => a.orderIndex - b.orderIndex);
 
-  // Agrupa per dia i ordena els dies cronològicament; dins del dia, per ordre de ruta.
   const byDay = new Map<string, Place[]>();
   for (const p of dated) {
     const key = p.arrivalDate!;
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key)!.push(p);
   }
-  const days: Day[] = [...byDay.entries()]
-    .map(([date, ps]) => ({
-      date,
-      places: ps.sort((a, b) => a.orderIndex - b.orderIndex),
-    }))
+  const days = [...byDay.entries()]
+    .map(([date, ps]) => ({ date, places: ps.sort((a, b) => a.orderIndex - b.orderIndex) }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  if (days.length === 0 && undated.length === 0) {
-    return (
-      <p className="text-sm text-ink-soft">
-        Encara no hi ha llocs. Afegeix-ne des de l&apos;editor i assigna&apos;ls una
-        data per veure l&apos;itinerari per dies.
-      </p>
-    );
-  }
-
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       <header>
         <h2 className="font-serif text-2xl font-semibold">L&apos;itinerari</h2>
         <p className="text-sm text-ink-soft mt-1">
-          {days.length > 0
-            ? `${days.length} ${days.length === 1 ? "dia" : "dies"} amb llocs assignats`
-            : "Assigna dates als llocs des de l'editor per ordenar-los per dies."}
+          {days.length} {days.length === 1 ? "dia" : "dies"} amb llocs · assigna
+          zones des de l&apos;editor per agrupar-los per etapes
         </p>
       </header>
-
       {days.map((day, di) => (
         <section key={day.date} className="relative">
-          <div className="flex items-baseline gap-3 mb-4">
+          <div className="flex items-baseline gap-3 mb-3">
             <span className="grid place-items-center h-9 w-9 shrink-0 rounded-full bg-peach text-white text-sm font-semibold font-serif shadow-[0_2px_0_0_rgba(226,122,69,0.3)]">
               {di + 1}
             </span>
-            <div className="min-w-0">
+            <div>
               <h3 className="font-serif text-lg font-semibold text-ink leading-tight">
                 {weekdayCa(day.date)}
               </h3>
@@ -79,36 +224,20 @@ export function ItineraryView({ places }: { places: Place[] }) {
               </p>
             </div>
           </div>
-
-          <ul className="space-y-2 pl-12">
+          <ul className="flex flex-wrap gap-1.5 pl-12">
             {day.places.map((p) => (
               <li
                 key={p.id}
-                className="rounded-[var(--radius-card)] border border-ink-faint/30 bg-cream-soft/50 px-4 py-3"
+                className="inline-flex items-center gap-1.5 rounded-full bg-cream-soft border border-ink-faint/40 px-2.5 py-1 text-sm text-ink"
+                title={p.notes ?? undefined}
               >
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <MapPin
-                    className="h-4 w-4 text-peach-deep shrink-0 self-center"
-                    strokeWidth={2}
-                  />
-                  <span className="font-serif font-semibold text-ink">
-                    {p.name}
-                  </span>
-                  {p.country && (
-                    <span className="text-xs text-ink-soft">· {p.country}</span>
-                  )}
-                </div>
-                {p.notes && (
-                  <p className="text-sm text-ink-soft leading-relaxed mt-1 pl-6">
-                    {p.notes}
-                  </p>
-                )}
+                <MapPin className="h-3.5 w-3.5 text-peach-deep shrink-0" strokeWidth={2} />
+                {p.name}
               </li>
             ))}
           </ul>
         </section>
       ))}
-
       {undated.length > 0 && (
         <section>
           <h3 className="font-serif text-base font-semibold text-ink-soft mb-3">
