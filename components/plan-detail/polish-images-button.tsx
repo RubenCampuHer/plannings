@@ -43,9 +43,14 @@ export function PolishImagesButton({
     setPending(true);
     try {
       const result = await polishImagesWithAi(planId, currentBody);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const data = result.data;
 
       // Injecta el nou body al textarea i avisa el form.
-      textarea.value = result.newBody;
+      textarea.value = data.newBody;
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
       textarea.scrollIntoView({ behavior: "smooth", block: "start" });
 
@@ -54,11 +59,11 @@ export function PolishImagesButton({
 
       const parts: string[] = [];
       parts.push(
-        result.added === 1
+        data.added === 1
           ? "1 imatge inserida"
-          : `${result.added} imatges inserides`,
+          : `${data.added} imatges inserides`,
       );
-      if (result.failed.length > 0) parts.push(`${result.failed.length} sense match`);
+      if (data.failed.length > 0) parts.push(`${data.failed.length} sense match`);
       setSuccess(parts.join(" · ") + " — recorda desar");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

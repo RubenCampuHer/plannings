@@ -4,6 +4,7 @@ import mammoth from "mammoth";
 import { GoogleGenAI, Type } from "@google/genai";
 import { revalidatePath } from "next/cache";
 import { geocodeSearch } from "./place-actions";
+import { assertCanCreatePlan, consumeQuota } from "./quota-actions";
 import { createSupabaseServer } from "./supabase-server";
 import type { PlanType } from "./types";
 
@@ -216,6 +217,9 @@ export async function analyzeWordDocument(
     );
   }
 
+  // Quota: aquesta crida fa servir Gemini intensament.
+  await consumeQuota("word_import");
+
   // Gemini 2.5 Flash accepta fins a 1M tokens (~4M caràcters). No tallem el text:
   // un doc de 53 pàgs dens ronda els 100k caràcters i hi cap de sobres.
 
@@ -419,6 +423,10 @@ export async function createPlansFromAnalysis(
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Cal estar autenticat per importar plans.");
+
+  // Quota plans propis (pare compta com un pla).
+  await assertCanCreatePlan();
+
   const now = new Date().toISOString();
   const takenSlugs = new Set<string>();
 

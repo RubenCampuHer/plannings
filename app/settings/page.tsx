@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { User, Crown, Users } from "lucide-react";
+import { User, Crown, Users, CreditCard, ChevronRight } from "lucide-react";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import { getMyQuota } from "@/lib/quota-actions";
 import { DeleteAccountButton } from "@/components/settings/delete-account-button";
 import { LeavePlanButton } from "@/components/settings/leave-plan-button";
 
@@ -37,6 +38,8 @@ export default async function SettingsPage() {
     ).map((r) => r.plans);
 
   const provider = user.app_metadata?.provider ?? "email";
+  const quota = await getMyQuota();
+  const tier = quota?.tier ?? "free";
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-12 md:py-16 space-y-10">
@@ -73,6 +76,28 @@ export default async function SettingsPage() {
             al login (de moment, mentre no posem un canvi des d'aquí).
           </p>
         )}
+      </section>
+
+      {/* Pla i facturació */}
+      <section className="space-y-4">
+        <h2 className="text-xs uppercase tracking-wide text-ink-soft flex items-center gap-2">
+          <CreditCard className="h-4 w-4" strokeWidth={2} />
+          Pla
+        </h2>
+        <Link
+          href="/settings/billing"
+          className="flex items-center justify-between gap-4 rounded-xl border border-ink-faint/40 bg-cream-soft/40 p-5 text-sm hover:bg-cream-soft/70 transition-colors"
+        >
+          <span className="space-y-1">
+            <span className="block text-ink font-medium uppercase tracking-wide">
+              {tier === "pro" ? "Pro" : "Free"}
+            </span>
+            <span className="block text-xs text-ink-soft">
+              Mira el teu ús i activa codis promocionals
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+        </Link>
       </section>
 
       {/* Plans propis */}

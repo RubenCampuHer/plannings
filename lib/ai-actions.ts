@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServer } from "./supabase-server";
 import { geocodeSearch } from "./place-actions";
 import { downloadPexelsImage, searchPexelsTop } from "./pexels-actions";
+import { consumeQuota } from "./quota-actions";
 import type { PlanType } from "./types";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY;
@@ -65,6 +66,25 @@ export type PolishSuggestions = {
   suggestedPlaces: SuggestedPlace[];
   suggestedChecklist: SuggestedChecklistItem[];
 };
+
+/**
+ * Resultat d'una server action que pot fallar amb un missatge per a l'usuari.
+ * Retornem l'error com a DADA (no `throw`) perquè Next.js emmascara qualsevol
+ * error llançat des d'una server action en builds de producció — el missatge
+ * real (quota, Gemini, validació) mai arribaria al client; només es veuria
+ * "An error occurred in the Server Components render…". Amb un resultat tipat,
+ * el component pot mostrar `error` directament.
+ */
+export type ActionResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string };
+
+// Helper intern (no exportat: en un fitxer "use server" només es poden
+// exportar funcions async i tipus). Converteix qualsevol excepció en un
+// resultat d'error amb el missatge ja traduït.
+function actionError(e: unknown): { ok: false; error: string } {
+  return { ok: false, error: e instanceof Error ? e.message : String(e) };
+}
 
 export type PlanDraft = {
   title: string;
@@ -296,42 +316,49 @@ async function callGemini(userMessage: string): Promise<PolishSuggestions> {
   };
 }
 
-export async function polishWithAi(planId: string): Promise<PolishSuggestions> {
-  const supabase = await createSupabaseServer();
+export async function polishWithAi(
+  planId: string,
+): Promise<ActionResult<PolishSuggestions>> {
+  try {
+    await consumeQuota("polish_text");
+    const supabase = await createSupabaseServer();
 
-  const { data: plan, error: planError } = await supabase
-    .from("plans")
-    .select("id,title,type,destination,start_date,end_date,summary,body")
-    .eq("id", planId)
-    .single();
-  if (planError || !plan) throw new Error("Plan no trobat");
+    const { data: plan, error: planError } = await supabase
+      .from("plans")
+      .select("id,title,type,destination,start_date,end_date,summary,body")
+      .eq("id", planId)
+      .single();
+    if (planError || !plan) throw new Error("Plan no trobat");
 
-  const [{ data: places }, { data: checklist }] = await Promise.all([
-    supabase.from("places").select("name,country").eq("plan_id", planId),
-    supabase.from("checklist_items").select("text").eq("plan_id", planId),
-  ]);
+    const [{ data: places }, { data: checklist }] = await Promise.all([
+      supabase.from("places").select("name,country").eq("plan_id", planId),
+      supabase.from("checklist_items").select("text").eq("plan_id", planId),
+    ]);
 
-  const placesList =
-    places && places.length > 0
-      ? places.map((p) => `- ${p.name}${p.country ? ` (${p.country})` : ""}`).join("\n")
-      : "(cap)";
-  const checklistList =
-    checklist && checklist.length > 0
-      ? checklist.map((c) => `- ${c.text}`).join("\n")
-      : "(cap)";
+    const placesList =
+      places && places.length > 0
+        ? places.map((p) => `- ${p.name}${p.country ? ` (${p.country})` : ""}`).join("\n")
+        : "(cap)";
+    const checklistList =
+      checklist && checklist.length > 0
+        ? checklist.map((c) => `- ${c.text}`).join("\n")
+        : "(cap)";
 
-  const draft: PlanDraft = {
-    title: plan.title,
-    type: plan.type as PlanType,
-    destination: plan.destination ?? undefined,
-    startDate: plan.start_date ?? undefined,
-    endDate: plan.end_date ?? undefined,
-    summary: plan.summary,
-    body: plan.body,
-  };
+    const draft: PlanDraft = {
+      title: plan.title,
+      type: plan.type as PlanType,
+      destination: plan.destination ?? undefined,
+      startDate: plan.start_date ?? undefined,
+      endDate: plan.end_date ?? undefined,
+      summary: plan.summary,
+      body: plan.body,
+    };
 
-  const userMessage = buildUserMessage(draft, placesList, checklistList);
-  return callGemini(userMessage);
+    const userMessage = buildUserMessage(draft, placesList, checklistList);
+    return { ok: true, data: await callGemini(userMessage) };
+  } catch (e) {
+    return actionError(e);
+  }
 }
 
 /**
@@ -341,13 +368,18 @@ export async function polishWithAi(planId: string): Promise<PolishSuggestions> {
  */
 export async function polishWithAiFromDraft(
   draft: PlanDraft,
-): Promise<PolishSuggestions> {
-  if (!draft.title.trim()) throw new Error("Necessites un títol per a polish.");
-  if (!draft.summary.trim()) throw new Error("Necessites un resum per a polish.");
-  if (!draft.body.trim()) throw new Error("Necessites una mica de cos per a polish.");
+): Promise<ActionResult<PolishSuggestions>> {
+  try {
+    if (!draft.title.trim()) throw new Error("Necessites un títol per a polish.");
+    if (!draft.summary.trim()) throw new Error("Necessites un resum per a polish.");
+    if (!draft.body.trim()) throw new Error("Necessites una mica de cos per a polish.");
 
-  const userMessage = buildUserMessage(draft, "(cap)", "(cap)");
-  return callGemini(userMessage);
+    await consumeQuota("polish_text");
+    const userMessage = buildUserMessage(draft, "(cap)", "(cap)");
+    return { ok: true, data: await callGemini(userMessage) };
+  } catch (e) {
+    return actionError(e);
+  }
 }
 
 export async function addAiChecklistItems(
@@ -540,11 +572,23 @@ async function uploadPexelsToBucket(
 export async function polishImagesWithAi(
   planId: string,
   currentBody: string,
+): Promise<ActionResult<ImagePolishResult>> {
+  try {
+    return { ok: true, data: await polishImagesImpl(planId, currentBody) };
+  } catch (e) {
+    return actionError(e);
+  }
+}
+
+async function polishImagesImpl(
+  planId: string,
+  currentBody: string,
 ): Promise<ImagePolishResult> {
   if (!currentBody.trim()) {
     throw new Error("Necessites una mica de cos per a polish d'imatges.");
   }
 
+  await consumeQuota("polish_images");
   const supabase = await createSupabaseServer();
 
   const { data: plan, error: planError } = await supabase

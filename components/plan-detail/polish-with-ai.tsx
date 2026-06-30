@@ -69,10 +69,15 @@ export function PolishWithAi(props: PolishWithAiProps) {
         props.mode === "edit"
           ? await polishWithAi(props.planId)
           : await polishWithAiFromDraft(props.getDraft());
-      setSuggestions(result);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const data = result.data;
+      setSuggestions(data);
       setAcceptBody(true);
-      setAcceptedPlaces(new Set(result.suggestedPlaces.map((_, i) => i)));
-      setAcceptedChecklist(new Set(result.suggestedChecklist.map((_, i) => i)));
+      setAcceptedPlaces(new Set(data.suggestedPlaces.map((_, i) => i)));
+      setAcceptedChecklist(new Set(data.suggestedChecklist.map((_, i) => i)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
