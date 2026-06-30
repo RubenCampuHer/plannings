@@ -32,7 +32,6 @@ import {
   cancelProposal,
   clearChatMessages,
   getChatMessages,
-  sendChatMessage,
   type ChatMessage,
 } from "@/lib/chat-actions";
 import type { ChatMode, Proposal } from "@/lib/chat-prompt";
@@ -58,6 +57,8 @@ export function PlanChat({ planId }: { planId: string }) {
   // a les targetes corresponents sense bloquejar tot el xat.
   const [busyProposals, setBusyProposals] = useState<Set<string>>(new Set());
   const [confirmingClear, setConfirmingClear] = useState(false);
+  // true un cop arriba el primer token del stream (amaga el "Pensant…").
+  const [streaming, setStreaming] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -110,6 +111,7 @@ export function PlanChat({ planId }: { planId: string }) {
     setError(null);
 
     const tempId = `temp-${crypto.randomUUID()}`;
+    const streamId = `stream-${crypto.randomUUID()}`;
     const optimisticUser: ChatMessage = {
       id: tempId,
       role: "user",
@@ -119,19 +121,74 @@ export function PlanChat({ planId }: { planId: string }) {
     setMessages((prev) => [...prev, optimisticUser]);
     setInput("");
     setPending(true);
+    setStreaming(false);
 
     try {
-      await sendChatMessage(planId, text, mode);
-      // Recarrega tots els missatges per tenir el user message amb el seu uuid
-      // real i l'assistant amb propostes correctament formatades.
+      const res = await fetch(`/api/plans/${planId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: text, mode }),
+      });
+      if (!res.ok || !res.body) {
+        throw new Error((await res.text()) || "Error de connexió amb el copilot.");
+      }
+
+      // Llegeix el stream NDJSON: { type: "text" | "done" | "error", ... }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let acc = "";
+      let started = false;
+      let errored: string | null = null;
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const evt = JSON.parse(line) as
+            | { type: "text"; delta: string }
+            | { type: "done"; assistantId: string }
+            | { type: "error"; message: string };
+          if (evt.type === "text") {
+            acc += evt.delta;
+            if (!started) {
+              started = true;
+              setStreaming(true);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: streamId,
+                  role: "assistant",
+                  content: acc,
+                  createdAt: new Date().toISOString(),
+                },
+              ]);
+            } else {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === streamId ? { ...m, content: acc } : m)),
+              );
+            }
+          } else if (evt.type === "error") {
+            errored = evt.message;
+          }
+        }
+      }
+      if (errored) throw new Error(errored);
+
+      // Recarrega per tenir ids reals i les propostes correctament formatades.
       const fresh = await getChatMessages(planId);
       setMessages(fresh);
       textareaRef.current?.focus();
     } catch (e) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setMessages((prev) => prev.filter((m) => m.id !== tempId && m.id !== streamId));
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setPending(false);
+      setStreaming(false);
     }
   }
 
@@ -247,7 +304,7 @@ export function PlanChat({ planId }: { planId: string }) {
             onCancel={(pid) => handleCancel(m.id, pid)}
           />
         ))}
-        {pending && (
+        {pending && !streaming && (
           <div className="flex justify-start">
             <div className="rounded-2xl bg-cream-soft border border-ink-faint/30 px-4 py-3 text-sm text-ink-soft italic flex items-center gap-2 rounded-bl-md">
               <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
@@ -574,6 +631,40 @@ function describeProposal(p: Proposal): {
         Icon: Trash2,
       };
     }
+    case "update_parent_body":
+      return {
+        title: `Reescriure el cos del pla pare "${parentTitle(p)}"`,
+        Icon: FileText,
+      };
+    case "update_parent_metadata":
+      return {
+        title: `Actualitzar metadades del pla pare "${parentTitle(p)}"`,
+        Icon: Pencil,
+      };
+    case "add_parent_checklist_item":
+      return {
+        title: `Afegir a la checklist del pla pare "${parentTitle(p)}": "${String(args.text ?? "?")}"`,
+        Icon: ListTodo,
+      };
+    case "update_parent_checklist_item": {
+      const before = p.preview?.item_before?.text ?? "ítem";
+      return {
+        title: `Editar checklist del pla pare "${parentTitle(p)}": "${before}"`,
+        Icon: ListTodo,
+      };
+    }
+    case "add_parent_place":
+      return {
+        title: `Afegir "${String(args.name ?? "?")}" al mapa del pla pare "${parentTitle(p)}"`,
+        Icon: MapPin,
+      };
+    case "delete_parent_place": {
+      const name = p.preview?.place_before?.name ?? "lloc";
+      return {
+        title: `Esborrar "${name}" del mapa del pla pare "${parentTitle(p)}"`,
+        Icon: Trash2,
+      };
+    }
   }
 }
 
@@ -582,11 +673,21 @@ function subTitle(p: Proposal): string {
   return p.preview?.subplan?.title ?? "?";
 }
 
+/** Títol del pla pare target d'una proposta *_parent. */
+function parentTitle(p: Proposal): string {
+  return p.preview?.parent?.title ?? "?";
+}
+
 function ProposalDetails({ proposal }: { proposal: Proposal }) {
   const args = proposal.arguments;
   const subLabel = proposal.preview?.subplan ? (
     <p className="text-[11px] text-peach-deep font-medium">
       Sub-plan: {proposal.preview.subplan.title}
+    </p>
+  ) : null;
+  const parentLabel = proposal.preview?.parent ? (
+    <p className="text-[11px] text-peach-deep font-medium">
+      Pla pare: {proposal.preview.parent.title}
     </p>
   ) : null;
 
@@ -654,6 +755,44 @@ function ProposalDetails({ proposal }: { proposal: Proposal }) {
       return (
         <div className="mt-1 space-y-1">
           {subLabel}
+          {renderPlaceDelete(args, proposal.preview?.place_before)}
+        </div>
+      );
+    // ---------- Variants de PLA PARE: mateix render + etiqueta del pare ----------
+    case "update_parent_body":
+      return (
+        <div className="mt-1 space-y-1">
+          {parentLabel}
+          {renderBodyStats(args, proposal.preview?.body_stats)}
+        </div>
+      );
+    case "update_parent_metadata":
+      return (
+        <div className="mt-1 space-y-1">
+          {parentLabel}
+          {renderMetadataDiff(args, proposal.preview?.metadata_before)}
+        </div>
+      );
+    case "add_parent_checklist_item":
+      return parentLabel ? <div className="mt-1">{parentLabel}</div> : null;
+    case "update_parent_checklist_item":
+      return (
+        <div className="mt-1 space-y-1">
+          {parentLabel}
+          {renderChecklistDiff(args, proposal.preview?.item_before)}
+        </div>
+      );
+    case "add_parent_place":
+      return (
+        <div className="mt-1 space-y-1">
+          {parentLabel}
+          {renderPlaceAdd(args, proposal.preview?.geocoded)}
+        </div>
+      );
+    case "delete_parent_place":
+      return (
+        <div className="mt-1 space-y-1">
+          {parentLabel}
           {renderPlaceDelete(args, proposal.preview?.place_before)}
         </div>
       );

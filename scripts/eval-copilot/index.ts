@@ -121,54 +121,86 @@ async function loadPlan(planId: string): Promise<PlanRow | null> {
 }
 
 async function loadContext(plan: PlanRow) {
+  const PLAN_COLS = "id,title,type,destination,start_date,end_date,summary,body";
   const [parentRes, childrenRes, placesRes, checklistRes] = await Promise.all([
     plan.parent_plan_id
-      ? supabase
-          .from("plans")
-          .select("id,title,type,destination,start_date,end_date,summary")
-          .eq("id", plan.parent_plan_id)
-          .maybeSingle()
+      ? supabase.from("plans").select(PLAN_COLS).eq("id", plan.parent_plan_id).maybeSingle()
       : Promise.resolve({ data: null }),
     supabase
       .from("plans")
-      .select("id,title,type,destination,start_date,end_date,summary,body")
+      .select(PLAN_COLS)
       .eq("parent_plan_id", plan.id)
       .order("start_date", { ascending: true, nullsFirst: false }),
     supabase.from("places").select("id,name,country").eq("plan_id", plan.id).order("order_index"),
     supabase.from("checklist_items").select("id,text,done").eq("plan_id", plan.id),
   ]);
 
-  // Checklist + llocs de cada sub-plan (mirall de lib/chat-actions.ts) perquè
-  // els casos d'edició de sub-plans tinguin els ids al context.
+  // Nets (grandchildren) — mirall de lib/chat-actions.ts.
   const childIds = (childrenRes.data ?? []).map((c) => c.id as string);
-  const [subChecklistRes, subPlacesRes] = await Promise.all([
+  const grandRes =
     childIds.length > 0
-      ? supabase.from("checklist_items").select("id,text,done,plan_id").in("plan_id", childIds)
+      ? await supabase
+          .from("plans")
+          .select(`${PLAN_COLS},parent_plan_id`)
+          .in("parent_plan_id", childIds)
+          .order("start_date", { ascending: true, nullsFirst: false })
+      : { data: [] as Array<Record<string, unknown>> };
+  const grandByChild = new Map<string, Array<Record<string, unknown>>>();
+  for (const g of grandRes.data ?? []) {
+    const pid = g.parent_plan_id as string;
+    if (!grandByChild.has(pid)) grandByChild.set(pid, []);
+    grandByChild.get(pid)!.push(g);
+  }
+
+  const contentIds = [
+    ...(plan.parent_plan_id ? [plan.parent_plan_id] : []),
+    ...childIds,
+    ...(grandRes.data ?? []).map((g) => g.id as string),
+  ];
+  const [clRes, plRes] = await Promise.all([
+    contentIds.length > 0
+      ? supabase.from("checklist_items").select("id,text,done,plan_id").in("plan_id", contentIds)
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
-    childIds.length > 0
-      ? supabase.from("places").select("id,name,country,plan_id").in("plan_id", childIds).order("order_index")
+    contentIds.length > 0
+      ? supabase.from("places").select("id,name,country,plan_id").in("plan_id", contentIds).order("order_index")
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
   ]);
-  const checklistByChild = new Map<string, Array<{ id: string; text: string; done: boolean }>>();
-  for (const row of subChecklistRes.data ?? []) {
+  const checklistByPlan = new Map<string, Array<{ id: string; text: string; done: boolean }>>();
+  for (const row of clRes.data ?? []) {
     const pid = row.plan_id as string;
-    if (!checklistByChild.has(pid)) checklistByChild.set(pid, []);
-    checklistByChild.get(pid)!.push({
+    if (!checklistByPlan.has(pid)) checklistByPlan.set(pid, []);
+    checklistByPlan.get(pid)!.push({
       id: row.id as string,
       text: row.text as string,
       done: row.done as boolean,
     });
   }
-  const placesByChild = new Map<string, Array<{ id: string; name: string; country?: string }>>();
-  for (const row of subPlacesRes.data ?? []) {
+  const placesByPlan = new Map<string, Array<{ id: string; name: string; country?: string }>>();
+  for (const row of plRes.data ?? []) {
     const pid = row.plan_id as string;
-    if (!placesByChild.has(pid)) placesByChild.set(pid, []);
-    placesByChild.get(pid)!.push({
+    if (!placesByPlan.has(pid)) placesByPlan.set(pid, []);
+    placesByPlan.get(pid)!.push({
       id: row.id as string,
       name: row.name as string,
       country: (row.country as string | null) ?? undefined,
     });
   }
+
+  const toNode = (r: Record<string, unknown>) => {
+    const id = r.id as string;
+    return {
+      id,
+      title: r.title as string,
+      type: r.type as string,
+      destination: (r.destination as string | null) ?? undefined,
+      startDate: (r.start_date as string | null) ?? undefined,
+      endDate: (r.end_date as string | null) ?? undefined,
+      summary: r.summary as string,
+      body: (r.body as string | null) ?? undefined,
+      checklist: checklistByPlan.get(id) ?? [],
+      places: placesByPlan.get(id) ?? [],
+    };
+  };
 
   return {
     title: plan.title,
@@ -188,28 +220,10 @@ async function loadContext(plan: PlanRow) {
       text: c.text as string,
       done: c.done as boolean,
     })),
-    parent: parentRes.data
-      ? {
-          id: parentRes.data.id as string,
-          title: parentRes.data.title as string,
-          type: parentRes.data.type as string,
-          destination: (parentRes.data.destination as string | null) ?? undefined,
-          startDate: (parentRes.data.start_date as string | null) ?? undefined,
-          endDate: (parentRes.data.end_date as string | null) ?? undefined,
-          summary: parentRes.data.summary as string,
-        }
-      : null,
+    parent: parentRes.data ? toNode(parentRes.data) : null,
     children: (childrenRes.data ?? []).map((c) => ({
-      id: c.id as string,
-      title: c.title as string,
-      type: c.type as string,
-      destination: (c.destination as string | null) ?? undefined,
-      startDate: (c.start_date as string | null) ?? undefined,
-      endDate: (c.end_date as string | null) ?? undefined,
-      summary: c.summary as string,
-      body: (c.body as string | null) ?? undefined,
-      checklist: checklistByChild.get(c.id as string) ?? [],
-      places: placesByChild.get(c.id as string) ?? [],
+      ...toNode(c),
+      children: (grandByChild.get(c.id as string) ?? []).map(toNode),
     })),
   };
 }

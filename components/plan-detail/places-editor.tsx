@@ -8,6 +8,7 @@ import {
   deletePlace,
   geocodeSearch,
   reorderPlaces,
+  setPlaceArrivalDate,
   type GeocodeResult,
 } from "@/lib/place-actions";
 import type { Place } from "@/lib/types";
@@ -100,6 +101,25 @@ export function PlacesEditor({
         setPlaces(before);
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
+      }
+    });
+  }
+
+  function setDate(placeId: string, value: string) {
+    const date = value || null;
+    const before = places;
+    setError(null);
+    setPlaces((prev) =>
+      prev.map((p) =>
+        p.id === placeId ? { ...p, arrivalDate: date ?? undefined } : p,
+      ),
+    );
+    startTransition(async () => {
+      try {
+        await setPlaceArrivalDate(planId, placeId, date);
+      } catch (e) {
+        setPlaces(before);
+        setError(e instanceof Error ? e.message : String(e));
       }
     });
   }
@@ -203,6 +223,14 @@ export function PlacesEditor({
                     {p.country && (
                       <span className="block text-xs text-ink-soft">{p.country}</span>
                     )}
+                    <input
+                      type="date"
+                      value={p.arrivalDate ?? ""}
+                      onChange={(e) => setDate(p.id, e.target.value)}
+                      disabled={isTemp}
+                      aria-label={`Data per a ${p.name}`}
+                      className="mt-1 h-8 px-2 rounded-md border border-ink-faint/50 bg-cream text-ink-soft text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-peach/30 disabled:opacity-50"
+                    />
                   </span>
                   <div className="flex items-center gap-1 sm:gap-0.5 opacity-70 sm:opacity-40 sm:group-hover:opacity-100 transition">
                     <button

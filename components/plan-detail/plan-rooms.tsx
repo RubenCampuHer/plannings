@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { BookOpen, Images, Map } from "lucide-react";
+import { BookOpen, CalendarDays, Images, Map } from "lucide-react";
 
-export type Room = "resum" | "mapa" | "album";
+export type Room = "resum" | "mapa" | "itinerari" | "album";
 
 const META: Record<Room, { label: string; Icon: typeof BookOpen }> = {
   resum: { label: "Resum", Icon: BookOpen },
   mapa: { label: "Mapa", Icon: Map },
+  itinerari: { label: "Itinerari", Icon: CalendarDays },
   album: { label: "Àlbum", Icon: Images },
 };
 

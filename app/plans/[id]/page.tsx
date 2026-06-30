@@ -25,6 +25,7 @@ import { PlanRooms, type Room } from "@/components/plan-detail/plan-rooms";
 import { PlanToc } from "@/components/plan-detail/plan-toc";
 import { SubPlansCard } from "@/components/plan-detail/sub-plans-card";
 import { SubPlansTimeline } from "@/components/plan-detail/sub-plans-timeline";
+import { ItineraryView } from "@/components/plan-detail/itinerary-view";
 import { formatDateRange, formatMoney } from "@/lib/format";
 import { getChildPlanRefs, getPlanById } from "@/lib/plans";
 import { extractH2Headings } from "@/lib/toc";
@@ -50,7 +51,7 @@ export async function generateMetadata({
 
 function parseRoom(v: string | string[] | undefined): Room {
   const value = Array.isArray(v) ? v[0] : v;
-  if (value === "mapa" || value === "album") return value;
+  if (value === "mapa" || value === "album" || value === "itinerari") return value;
   return "resum";
 }
 
@@ -99,10 +100,13 @@ export default async function PlanDetailPage({
   // - Àlbum: per a viatges/escapades sempre (perquè es pot pujar des d'aquí encara que estigui buit);
   //   per a plans `day` només quan ja hi ha fotos.
   const hasMapa = plan.places.length > 0;
+  // L'itinerari té sentit quan algun lloc té data assignada.
+  const hasItinerari = plan.places.some((p) => p.arrivalDate);
   const hasAlbum = plan.photos.length > 0 || plan.type !== "day";
   const available: Room[] = [
     "resum",
     ...(hasMapa ? (["mapa"] as const) : []),
+    ...(hasItinerari ? (["itinerari"] as const) : []),
     ...(hasAlbum ? (["album"] as const) : []),
   ];
   const requested = parseRoom(sp.v);
@@ -219,6 +223,12 @@ export default async function PlanDetailPage({
             </header>
             <MapSection places={plan.places} />
             <PlaceList places={plan.places} />
+          </div>
+        )}
+
+        {room === "itinerari" && (
+          <div className="max-w-3xl mx-auto">
+            <ItineraryView places={plan.places} />
           </div>
         )}
 

@@ -97,6 +97,30 @@ export async function addPlace(planId: string, place: {
   revalidatePath(`/plans/${planId}/edit`);
 }
 
+/**
+ * Assigna (o esborra, amb date=null) la data d'arribada d'un lloc. Valida que el
+ * lloc pertany al pla abans d'escriure.
+ */
+export async function setPlaceArrivalDate(
+  planId: string,
+  placeId: string,
+  date: string | null,
+): Promise<void> {
+  // Validació de format: YYYY-MM-DD o null.
+  const value =
+    date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase
+    .from("places")
+    .update({ arrival_date: value })
+    .eq("id", placeId)
+    .eq("plan_id", planId);
+  if (error) throw new Error(`Desar data del lloc: ${error.message}`);
+
+  revalidatePath(`/plans/${planId}`);
+  revalidatePath(`/plans/${planId}/edit`);
+}
+
 export async function deletePlace(planId: string, placeId: string): Promise<void> {
   const supabase = await createSupabaseServer();
   const { error } = await supabase

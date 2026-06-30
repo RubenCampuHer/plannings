@@ -33,6 +33,11 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
           description:
             "Per què val la pena (opcional, 1 frase curta — es guarda com a nota del lloc).",
         },
+        arrival_date: {
+          type: Type.STRING,
+          description:
+            "Data de visita en format YYYY-MM-DD (opcional). Posa-la si l'usuari indica quan visita el lloc — alimenta l'itinerari per dia.",
+        },
       },
       required: ["name", "search_query"],
     },
@@ -312,6 +317,11 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
           description:
             "Per què val la pena (opcional, 1 frase — es guarda com a nota).",
         },
+        arrival_date: {
+          type: Type.STRING,
+          description:
+            "Data de visita en format YYYY-MM-DD (opcional) per a l'itinerari del sub-plan.",
+        },
       },
       required: ["subplan_id", "name", "search_query"],
     },
@@ -335,6 +345,119 @@ export const COPILOT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
       required: ["subplan_id", "place_id"],
     },
   },
+  // ===================================================================
+  // Edició del PLA PARE (si el pla actual en té un). No porten id: el pare
+  // és únic. El sistema valida que el pla actual té pare abans d'aplicar.
+  // ===================================================================
+  {
+    name: "update_parent_body",
+    description:
+      "Substitueix el cos sencer del PLA PARE amb un nou Markdown. CRÍTIC: retorna el body COMPLET, no un diff. PRESERVA les imatges inline `![](pp:...)`. Usa NOMÉS si el pla actual té pare (secció 'Aquest pla forma part d'un viatge més gran').",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        new_body: {
+          type: Type.STRING,
+          description: "El nou cos Markdown sencer del pla pare.",
+        },
+        summary: {
+          type: Type.STRING,
+          description:
+            "Resum nou (1-2 frases) per a l'índex del pare. Inclou-lo si el canvi és substancial (opcional).",
+        },
+      },
+      required: ["new_body"],
+    },
+  },
+  {
+    name: "update_parent_metadata",
+    description:
+      "Edita un o més camps de metadades del PLA PARE (títol, resum, destinació, dates). Almenys un camp.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: "Nou títol (opcional)." },
+        summary: { type: Type.STRING, description: "Nou resum (opcional)." },
+        destination: {
+          type: Type.STRING,
+          description: "Nova destinació; cadena buida per esborrar (opcional).",
+        },
+        start_date: {
+          type: Type.STRING,
+          description: "Nova data d'inici YYYY-MM-DD (opcional).",
+        },
+        end_date: {
+          type: Type.STRING,
+          description: "Nova data de fi YYYY-MM-DD (opcional).",
+        },
+      },
+    },
+  },
+  {
+    name: "add_parent_checklist_item",
+    description:
+      "Afegir un item a la checklist del PLA PARE. Usa NOMÉS quan l'usuari ho demani explícitament.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        text: { type: Type.STRING, description: "Text curt de l'item, en català." },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "update_parent_checklist_item",
+    description:
+      "Edita el text o l'estat d'un ítem de la checklist del PLA PARE. Almenys un de text/done. Els ids els tens a la secció del pare.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        item_id: {
+          type: Type.STRING,
+          description: "ID de l'ítem de checklist del pare tal com apareix al context.",
+        },
+        text: { type: Type.STRING, description: "Nou text (opcional)." },
+        done: { type: Type.BOOLEAN, description: "Marcar/desmarcar (opcional)." },
+      },
+      required: ["item_id"],
+    },
+  },
+  {
+    name: "add_parent_place",
+    description:
+      "Afegir un lloc al mapa del PLA PARE. El sistema farà geocoding via OpenStreetMap.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        name: { type: Type.STRING, description: "Nom curt del lloc." },
+        search_query: {
+          type: Type.STRING,
+          description: "Query precisa per OpenStreetMap. Inclou ciutat o regió.",
+        },
+        why: { type: Type.STRING, description: "Per què (opcional, nota)." },
+        arrival_date: {
+          type: Type.STRING,
+          description: "Data YYYY-MM-DD (opcional).",
+        },
+      },
+      required: ["name", "search_query"],
+    },
+  },
+  {
+    name: "delete_parent_place",
+    description:
+      "Esborra un lloc del mapa del PLA PARE pel seu id. Els ids els tens a la secció del pare.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        place_id: {
+          type: Type.STRING,
+          description: "ID del lloc del pare tal com apareix al context.",
+        },
+      },
+      required: ["place_id"],
+    },
+  },
 ];
 
 export type ProposalStatus = "pending" | "applied" | "cancelled" | "failed";
@@ -352,7 +475,13 @@ export type ProposalFunctionName =
   | "add_subplan_checklist_item"
   | "update_subplan_checklist_item"
   | "add_subplan_place"
-  | "delete_subplan_place";
+  | "delete_subplan_place"
+  | "update_parent_body"
+  | "update_parent_metadata"
+  | "add_parent_checklist_item"
+  | "update_parent_checklist_item"
+  | "add_parent_place"
+  | "delete_parent_place";
 
 /** Conjunt de noms de funcions que operen sobre un sub-plan (porten subplan_id). */
 export const SUBPLAN_FUNCTION_NAMES: ReadonlySet<ProposalFunctionName> = new Set([
@@ -362,6 +491,16 @@ export const SUBPLAN_FUNCTION_NAMES: ReadonlySet<ProposalFunctionName> = new Set
   "update_subplan_checklist_item",
   "add_subplan_place",
   "delete_subplan_place",
+]);
+
+/** Conjunt de noms de funcions que operen sobre el pla pare. */
+export const PARENT_FUNCTION_NAMES: ReadonlySet<ProposalFunctionName> = new Set([
+  "update_parent_body",
+  "update_parent_metadata",
+  "add_parent_checklist_item",
+  "update_parent_checklist_item",
+  "add_parent_place",
+  "delete_parent_place",
 ]);
 
 export type Proposal = {
@@ -381,6 +520,11 @@ export type Proposal = {
   preview?: {
     /** Variants *_subplan: quin sub-plan és el target (per etiquetar la card). */
     subplan?: {
+      id: string;
+      title: string;
+    };
+    /** Variants *_parent: el pla pare target (per etiquetar la card). */
+    parent?: {
       id: string;
       title: string;
     };
@@ -433,6 +577,23 @@ function typeLabelOf(t: string): string {
   return TYPE_LABELS[t] ?? t;
 }
 
+/** Un pla (pare, fill o net) amb el seu contingut editable pel copilot. */
+export type PlanNode = {
+  id: string;
+  title: string;
+  type: string;
+  destination?: string;
+  startDate?: string;
+  endDate?: string;
+  summary: string;
+  /** Cos sencer. El copilot pot raonar amb el detall (preus, dies, etc.). */
+  body?: string;
+  /** Checklist amb ids — perquè el copilot pugui editar ítems. */
+  checklist?: Array<{ id: string; text: string; done: boolean }>;
+  /** Llocs amb ids — perquè el copilot pugui editar/esborrar-los. */
+  places?: Array<{ id: string; name: string; country?: string }>;
+};
+
 export type CopilotPlanContext = {
   title: string;
   type: string;
@@ -443,31 +604,10 @@ export type CopilotPlanContext = {
   body: string;
   places: Array<{ id: string; name: string; country?: string }>;
   checklist: Array<{ id: string; text: string; done: boolean }>;
-  parent?: {
-    id: string;
-    title: string;
-    type: string;
-    destination?: string;
-    startDate?: string;
-    endDate?: string;
-    summary: string;
-  } | null;
-  children: Array<{
-    id: string;
-    title: string;
-    type: string;
-    destination?: string;
-    startDate?: string;
-    endDate?: string;
-    summary: string;
-    /** Cos sencer del sub-pla. Si està disponible, el copilot pot raonar
-     * amb el seu detall (preus per país, dies específics, etc.). */
-    body?: string;
-    /** Checklist del sub-pla amb ids — perquè el copilot pugui editar ítems. */
-    checklist?: Array<{ id: string; text: string; done: boolean }>;
-    /** Llocs del sub-pla amb ids — perquè el copilot pugui esborrar-los. */
-    places?: Array<{ id: string; name: string; country?: string }>;
-  }>;
+  /** Pla pare amb contingut: el copilot pot editar-lo amb les funcions *_parent. */
+  parent?: PlanNode | null;
+  /** Sub-plans (fills directes), cadascun amb els seus nets (grandchildren). */
+  children: Array<PlanNode & { children?: PlanNode[] }>;
 };
 
 export function buildCopilotSystemPrompt(
@@ -495,41 +635,52 @@ export function buildCopilotSystemPrompt(
 
   const dateRange = formatDateRange(ctx.startDate, ctx.endDate);
 
+  // Renderitza checklist + llocs (amb ids) + cos d'un node (pare/fill/net).
+  const renderNodeContent = (n: PlanNode, indent: string): string => {
+    const cl =
+      n.checklist && n.checklist.length > 0
+        ? `\n${indent}Checklist:\n${n.checklist
+            .map((i) => `${indent}  - [${i.done ? "x" : " "}] item_id=${i.id} · ${i.text}`)
+            .join("\n")}`
+        : "";
+    const pl =
+      n.places && n.places.length > 0
+        ? `\n${indent}Llocs al mapa:\n${n.places
+            .map((p) => `${indent}  - place_id=${p.id} · ${p.name}${p.country ? ` (${p.country})` : ""}`)
+            .join("\n")}`
+        : "";
+    const body = n.body ? `\n\nCos:\n\`\`\`\n${n.body}\n\`\`\`` : "";
+    return `${cl}${pl}${body}`;
+  };
+
+  const nodeHeader = (n: PlanNode): string => {
+    const dr = formatDateRange(n.startDate, n.endDate);
+    return `"${n.title}" (${typeLabelOf(n.type)}${
+      n.destination ? `, ${n.destination}` : ""
+    }${dr ? `, ${dr}` : ""})`;
+  };
+
   const parentBlock = ctx.parent
-    ? `\nAquest pla forma part d'un viatge més gran:
-- "${ctx.parent.title}" (${typeLabelOf(ctx.parent.type)}${
-        ctx.parent.destination ? `, ${ctx.parent.destination}` : ""
-      }${
-        formatDateRange(ctx.parent.startDate, ctx.parent.endDate)
-          ? `, ${formatDateRange(ctx.parent.startDate, ctx.parent.endDate)}`
-          : ""
-      }). Resum: ${ctx.parent.summary}. Enllaç: /plans/${ctx.parent.id}`
+    ? `\nAquest pla forma part d'un viatge més gran (POTS editar el pare amb les funcions \`*_parent\`):
+- Pla pare: ${nodeHeader(ctx.parent)}. Resum: ${ctx.parent.summary}. Enllaç: /plans/${ctx.parent.id}${renderNodeContent(ctx.parent, "")}`
     : "";
 
   const childrenBlock =
     ctx.children.length > 0
-      ? `\nSub-plans (peces d'aquest viatge) — has de fer servir el seu body sencer quan facis càlculs específics per país/regió. Per editar-los usa les funcions \`*_subplan*\` passant el subplan_id=... d'aquí:\n${ctx.children
+      ? `\nSub-plans (peces d'aquest viatge) — usa el seu body per a càlculs per país/regió. Per editar-los usa les funcions \`*_subplan\` passant el subplan_id=... d'aquí. Els NETS (sub-plans d'un sub-plan) també s'editen amb \`*_subplan\` passant el seu propi subplan_id:\n${ctx.children
           .map((c) => {
-            const dr = formatDateRange(c.startDate, c.endDate);
-            const header = `### Sub-plan: "${c.title}" (${typeLabelOf(c.type)}${
-              c.destination ? `, ${c.destination}` : ""
-            }${dr ? `, ${dr}` : ""}) — subplan_id=${c.id} · Enllaç: /plans/${c.id}\nResum: ${c.summary}`;
-            const checklistLines =
-              c.checklist && c.checklist.length > 0
-                ? `\nChecklist del sub-plan:\n${c.checklist
-                    .map((i) => `  - [${i.done ? "x" : " "}] item_id=${i.id} · ${i.text}`)
-                    .join("\n")}`
+            const header = `### Sub-plan: ${nodeHeader(c)} — subplan_id=${c.id} · Enllaç: /plans/${c.id}\nResum: ${c.summary}`;
+            const content = renderNodeContent(c, "");
+            const grand =
+              c.children && c.children.length > 0
+                ? `\n${c.children
+                    .map(
+                      (g) =>
+                        `#### Net (dins de "${c.title}"): ${nodeHeader(g)} — subplan_id=${g.id} · Enllaç: /plans/${g.id}\nResum: ${g.summary}${renderNodeContent(g, "  ")}`,
+                    )
+                    .join("\n\n")}`
                 : "";
-            const placeLines =
-              c.places && c.places.length > 0
-                ? `\nLlocs al mapa del sub-plan:\n${c.places
-                    .map((p) => `  - place_id=${p.id} · ${p.name}${p.country ? ` (${p.country})` : ""}`)
-                    .join("\n")}`
-                : "";
-            const bodyBlock = c.body
-              ? `\n\nCos del sub-plan:\n\`\`\`\n${c.body}\n\`\`\``
-              : "";
-            return `${header}${checklistLines}${placeLines}${bodyBlock}`;
+            return `${header}${content}${grand}`;
           })
           .join("\n\n")}`
       : "";
@@ -636,9 +787,17 @@ Tu: "Per afegir-lo al mapa cal que canviïs a mode Edició a dalt del xat — de
 - \`update_subplan_body(subplan_id, new_body, summary?)\` — reescriu el cos d'un sub-plan
 - \`update_subplan_metadata(subplan_id, title?, summary?, destination?, start_date?, end_date?)\` — metadades d'un sub-plan
 - \`add_subplan_checklist_item(subplan_id, text)\` / \`update_subplan_checklist_item(subplan_id, item_id, text?, done?)\` — checklist del sub-plan
-- \`add_subplan_place(subplan_id, name, search_query, why?)\` / \`delete_subplan_place(subplan_id, place_id)\` — llocs del sub-plan
+- \`add_subplan_place(subplan_id, name, search_query, why?, arrival_date?)\` / \`delete_subplan_place(subplan_id, place_id)\` — llocs del sub-plan
 
-Els ids (subplan_id, item_id, place_id) els tens a la secció 'Sub-plans' del context, sota cada sub-plan. NO els inventis.
+Els **NETS** (sub-plans d'un sub-plan) s'editen igual: amb les funcions \`*_subplan\` passant el subplan_id del NET (apareix al context sota el seu sub-plan pare).
+
+**PLA PARE** (només si aquest pla en té un — secció "Aquest pla forma part d'un viatge més gran"):
+- \`update_parent_body(new_body, summary?)\`, \`update_parent_metadata(...)\`
+- \`add_parent_checklist_item(text)\` / \`update_parent_checklist_item(item_id, text?, done?)\`
+- \`add_parent_place(name, search_query, why?, arrival_date?)\` / \`delete_parent_place(place_id)\`
+Cap d'aquestes porta id de pla (el pare és únic); l'item_id/place_id els tens a la secció del pare.
+
+Els ids (subplan_id, item_id, place_id) els tens al context (sota cada sub-plan, net o el pare). NO els inventis.
 
 **REGLA CLAU**: distingeix VERB IMPERATIU vs PREGUNTA. Només crida una funció si l'usuari et dóna una ORDRE explícita ("afegeix...", "canvia...", "esborra...", "treu..."). Per a tota la resta, respon en TEXT.
 
@@ -672,8 +831,8 @@ Quan cridis una funció, escriu també un MISSATGE BREU confirmant la proposta. 
 }
 
 ### 8. Quan no pots
-- Sub-plans: SÍ que pots editar-los amb les funcions \`*_subplan*\` (en mode edició). Necessites el subplan_id del context — si no el tens, demana de quin sub-plan parla.
-- Pla pare: NO el pots editar des d'aquí; recorda a l'usuari que ho faci des del chat del pare.
+- Sub-plans i nets: SÍ que pots editar-los amb les funcions \`*_subplan\` (mode edició) passant el subplan_id corresponent. Si no el tens, demana de quin parla.
+- Pla pare: SÍ que el pots editar amb les funcions \`*_parent\` (si aquest pla en té un). Si no en té, digues-ho.
 - Dades genuïnament absents: digues-ho i ofereix una aproximació o una acció.
 
 ### 9. To
