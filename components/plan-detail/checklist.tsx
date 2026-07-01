@@ -25,6 +25,9 @@ export function Checklist({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
+  // Encongida per defecte quan ja hi ha tasques (si és buida, oberta per poder
+  // afegir-ne). Es desplega manualment.
+  const [collapsed, setCollapsed] = useState(() => items.length > 0);
   const [, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -155,10 +158,29 @@ export function Checklist({
     );
   }
 
+  const collapsible = list.length > 0;
+
   return (
     <section className="rounded-[var(--radius-card)] bg-cream-soft/70 border border-ink-faint/30 p-6">
-      <header className="flex items-baseline justify-between mb-3">
-        <h2 className="font-serif text-lg font-semibold">Per fer</h2>
+      <button
+        type="button"
+        onClick={() => collapsible && setCollapsed((v) => !v)}
+        aria-expanded={collapsible ? !collapsed : undefined}
+        className={`w-full flex items-baseline justify-between gap-2 text-left mb-3 ${
+          collapsible ? "" : "cursor-default"
+        }`}
+      >
+        <span className="flex items-baseline gap-1.5">
+          {collapsible && (
+            <ChevronRight
+              className={`h-4 w-4 self-center shrink-0 text-ink-soft transition-transform ${
+                collapsed ? "" : "rotate-90"
+              }`}
+              strokeWidth={2}
+            />
+          )}
+          <h2 className="font-serif text-lg font-semibold">Per fer</h2>
+        </span>
         <span className="font-hand text-base text-ink-soft -rotate-1">
           {list.length === 0
             ? "buit"
@@ -166,11 +188,13 @@ export function Checklist({
               ? "tot fet ✨"
               : `${remaining} pendents`}
         </span>
-      </header>
+      </button>
 
       {list.length > 0 && (
         <div
-          className="h-1.5 w-full rounded-full bg-ink-faint/15 overflow-hidden mb-4"
+          className={`h-1.5 w-full rounded-full bg-ink-faint/15 overflow-hidden ${
+            collapsed ? "" : "mb-4"
+          }`}
           role="progressbar"
           aria-valuenow={pct}
           aria-valuemin={0}
@@ -186,69 +210,82 @@ export function Checklist({
         </div>
       )}
 
-      {pending.length > 0 && (
-        <ul className="space-y-2.5 mb-3">
-          <AnimatePresence initial={false}>
-            {pending.map(renderItem)}
-          </AnimatePresence>
-        </ul>
-      )}
-
-      {done.length > 0 && (
-        <div className="mb-3">
-          <button
-            type="button"
-            onClick={() => setShowDone((v) => !v)}
-            aria-expanded={showDone}
-            className="flex items-center gap-1 text-xs text-ink-soft hover:text-ink transition-colors"
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
           >
-            <ChevronRight
-              className={`h-3.5 w-3.5 transition-transform ${showDone ? "rotate-90" : ""}`}
-              strokeWidth={2}
-            />
-            {done.length} {done.length === 1 ? "feta" : "fetes"}
-          </button>
-          <AnimatePresence initial={false}>
-            {showDone && (
-              <motion.ul
-                key="done-list"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2 }}
-                className="space-y-2.5 mt-2.5 overflow-hidden"
-              >
-                {done.map(renderItem)}
-              </motion.ul>
+            {pending.length > 0 && (
+              <ul className="space-y-2.5 mb-3">
+                <AnimatePresence initial={false}>
+                  {pending.map(renderItem)}
+                </AnimatePresence>
+              </ul>
             )}
-          </AnimatePresence>
-        </div>
-      )}
 
-      <form onSubmit={add} className="flex items-center gap-2">
-        <input
-          ref={inputRef}
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Afegir un pendent…"
-          className="flex-1 h-9 px-3 rounded-md border border-ink-faint/50 bg-cream text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40"
-        />
-        <button
-          type="submit"
-          disabled={draft.trim().length === 0}
-          aria-label="Afegir item"
-          className="grid place-items-center h-9 w-9 rounded-md bg-peach text-white shadow-[0_1px_0_0_rgba(226,122,69,0.25)] hover:bg-peach-deep disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          <Plus className="h-4 w-4" strokeWidth={2.5} />
-        </button>
-      </form>
+            {done.length > 0 && (
+              <div className="mb-3">
+                <button
+                  type="button"
+                  onClick={() => setShowDone((v) => !v)}
+                  aria-expanded={showDone}
+                  className="flex items-center gap-1 text-xs text-ink-soft hover:text-ink transition-colors"
+                >
+                  <ChevronRight
+                    className={`h-3.5 w-3.5 transition-transform ${showDone ? "rotate-90" : ""}`}
+                    strokeWidth={2}
+                  />
+                  {done.length} {done.length === 1 ? "feta" : "fetes"}
+                </button>
+                <AnimatePresence initial={false}>
+                  {showDone && (
+                    <motion.ul
+                      key="done-list"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="space-y-2.5 mt-2.5 overflow-hidden"
+                    >
+                      {done.map(renderItem)}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
 
-      {error && <p className="mt-2 text-xs text-peach-deep">{error}</p>}
+            <form onSubmit={add} className="flex items-center gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Afegir un pendent…"
+                className="flex-1 h-9 px-3 rounded-md border border-ink-faint/50 bg-cream text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-peach/40 focus:border-peach/40"
+              />
+              <button
+                type="submit"
+                disabled={draft.trim().length === 0}
+                aria-label="Afegir item"
+                className="grid place-items-center h-9 w-9 rounded-md bg-peach text-white shadow-[0_1px_0_0_rgba(226,122,69,0.25)] hover:bg-peach-deep disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+            </form>
 
-      {children && (
-        <div className="mt-5 pt-5 border-t border-ink-faint/25">{children}</div>
-      )}
+            {error && <p className="mt-2 text-xs text-peach-deep">{error}</p>}
+
+            {children && (
+              <div className="mt-5 pt-5 border-t border-ink-faint/25">{children}</div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
