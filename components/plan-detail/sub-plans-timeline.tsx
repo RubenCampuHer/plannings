@@ -52,6 +52,8 @@ export function SubPlansTimeline({
   const todayMs = Date.now();
   const todayPct = ((todayMs - startMs) / spanMs) * 100;
   const todayInRange = todayPct >= 0 && todayPct <= 100;
+  // Data d'avui en ISO (YYYY-MM-DD) per marcar quina peça és "ara" a la vista mòbil.
+  const todayISO = new Date(todayMs).toISOString().slice(0, 10);
 
   function pctFor(date: string): number {
     return ((new Date(date).getTime() - startMs) / spanMs) * 100;
@@ -71,7 +73,9 @@ export function SubPlansTimeline({
         </span>
       </header>
 
-      <div className="relative space-y-2.5">
+      {/* Gantt horitzontal: només sm+ (al mòbil les barres curtes queden
+          il·legibles). Al mòbil fem servir l'agenda vertical de sota. */}
+      <div className="hidden sm:block relative space-y-2.5">
         {/* Línia vertical "avui" si cau al rang. */}
         {todayInRange && (
           <div
@@ -113,6 +117,46 @@ export function SubPlansTimeline({
           );
         })}
       </div>
+
+      {/* Agenda vertical: vista mòbil, llegible a pantalla estreta. Cada peça a
+          amplada completa, en ordre cronològic, amb el seu rang de dates. */}
+      <ul className="sm:hidden space-y-2">
+        {dated.map((c) => {
+          const isNow = todayISO >= c.startDate && todayISO <= c.endDate;
+          return (
+            <li key={c.id}>
+              <Link
+                href={`/plans/${c.id}`}
+                className={`flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors ${
+                  isNow
+                    ? "border-peach/50 bg-peach/10"
+                    : "border-ink-faint/20 bg-cream/40 hover:bg-cream"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    isNow ? "bg-peach" : "bg-peach/60"
+                  }`}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-ink truncate">
+                    {c.title}
+                  </span>
+                  <span className="block text-xs text-ink-soft tabular-nums">
+                    {formatShortDate(c.startDate)} → {formatShortDate(c.endDate)}
+                  </span>
+                </span>
+                {isNow && (
+                  <span className="shrink-0 font-hand text-xs text-peach-deep -rotate-1">
+                    avui
+                  </span>
+                )}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
