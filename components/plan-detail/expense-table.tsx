@@ -1,5 +1,6 @@
 import { formatMoney } from "@/lib/format";
 import type { Expense } from "@/lib/types";
+import { CollapsibleCard } from "./collapsible-card";
 
 export function ExpenseTable({
   expenses,
@@ -16,17 +17,15 @@ export function ExpenseTable({
   const anyEstimated = expenses.some((e) => e.isEstimated);
 
   return (
-    <section className="rounded-[var(--radius-card)] bg-cream-soft/70 border border-ink-faint/30 p-6">
-      <header className="flex items-baseline justify-between mb-4">
-        <h2 className="font-serif text-lg font-semibold">
-          {anyEstimated ? "Pressupost" : "Despeses"}
-        </h2>
-        {budgetTotal && (
-          <span className="font-hand text-lg text-peach-deep -rotate-1">
-            {formatMoney(budgetTotal, currency)}
-          </span>
-        )}
-      </header>
+    <CollapsibleCard
+      title={anyEstimated ? "Pressupost" : "Despeses"}
+      defaultCollapsed={expenses.length > 4}
+      summary={
+        <span className="font-hand text-lg text-peach-deep -rotate-1">
+          {formatMoney(budgetTotal ?? total, currency)}
+        </span>
+      }
+    >
       <ul className="divide-y divide-ink-faint/30">
         {expenses.map((e) => (
           <li key={e.id} className="flex items-baseline justify-between py-2.5 text-sm">
@@ -49,6 +48,6 @@ export function ExpenseTable({
           {formatMoney(total, currency)}
         </span>
       </div>
-    </section>
+    </CollapsibleCard>
   );
 }

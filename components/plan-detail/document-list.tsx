@@ -1,6 +1,7 @@
 import { FileText, FileType } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import type { PlanDocument } from "@/lib/types";
+import { CollapsibleCard } from "./collapsible-card";
 
 function iconFor(mime: string) {
   if (mime.includes("pdf")) return FileType;
@@ -11,8 +12,15 @@ export function DocumentList({ documents }: { documents: PlanDocument[] }) {
   if (documents.length === 0) return null;
 
   return (
-    <section className="rounded-[var(--radius-card)] bg-cream-soft/70 border border-ink-faint/30 p-6">
-      <h2 className="font-serif text-lg font-semibold mb-4">Documents</h2>
+    <CollapsibleCard
+      title="Documents"
+      defaultCollapsed={documents.length > 4}
+      summary={
+        <span className="text-xs text-ink-soft tabular-nums">
+          {documents.length}
+        </span>
+      }
+    >
       <ul className="space-y-2">
         {documents.map((doc) => {
           const Icon = iconFor(doc.mimeType);
@@ -32,6 +40,6 @@ export function DocumentList({ documents }: { documents: PlanDocument[] }) {
           );
         })}
       </ul>
-    </section>
+    </CollapsibleCard>
   );
 }
