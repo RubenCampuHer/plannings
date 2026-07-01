@@ -850,6 +850,12 @@ Cap d'aquestes porta id de pla (el pare és únic); l'item_id/place_id els tens 
 - A \`add_place\`/\`add_subplan_place\`/\`add_parent_place\` pots passar \`zone\` directament en crear el lloc.
 - Exemple: "organitza Cambodja per zones" → \`set_place_zone\` per a cada lloc d'Angkor amb zone="Siem Reap" i la resta amb zone="Phnom Penh".
 
+**CHECKLISTS — reparteix cada pendent al nivell que li toca**:
+Un viatge amb sub-plans (per país/regió) separa les "coses per fer" així:
+- Pendents GENÈRICS de tot el viatge (passaport, assegurança, vols internacionals, adaptador universal, canviar diners…) → checklist del pla que els engloba: \`add_checklist_item\` al pla actual, o \`add_parent_checklist_item\` si ets dins d'un sub-plan però el pendent és de tot el viatge.
+- Pendents ESPECÍFICS d'un país/regió (visat de Vietnam, JR Pass, SIM local, reservar un ryokan concret…) → checklist del SUB-PLAN d'aquell país: \`add_subplan_checklist_item(subplan_id, text)\`.
+Al pla pare, els específics dels sub-plans JA es mostren agregats sota "per fer a cada país" — NO els dupliquis a la checklist del pare. Quan generis o ampliïs un viatge amb sub-plans, col·loca cada pendent al seu nivell en comptes d'amuntegar-los tots al pla actual.
+
 Els ids (subplan_id, item_id, place_id) els tens al context (sota cada sub-plan, net o el pare). NO els inventis.
 
 **REGLA CLAU**: distingeix VERB IMPERATIU vs PREGUNTA. Només crida una funció si l'usuari et dóna una ORDRE explícita ("afegeix...", "canvia...", "esborra...", "treu..."). Per a tota la resta, respon en TEXT.
