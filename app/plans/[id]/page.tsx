@@ -199,10 +199,13 @@ export default async function PlanDetailPage({
       <div className="mx-auto max-w-6xl px-6 py-12 pb-28">
 
         {room === "resum" && (
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-12 items-start">
-            <div className="space-y-12 min-w-0">
-              {/* Timeline només si hi ha sub-plans amb dates; ajuda a veure
-                  d'un cop d'ull "quan toca cada peça" en viatges llargs. */}
+          // Grid per àrees: al desktop resum+cos a l'esquerra i sidebar sticky
+          // a la dreta; al mòbil, per no enterrar la lateral al final, l'ordre
+          // és resum → sidebar → cos (la lateral queda a mà just sota el resum).
+          <div className="grid grid-cols-1 gap-8 items-start lg:grid-cols-[1fr_320px] lg:gap-x-12 lg:gap-y-8">
+            {/* Timeline només si hi ha sub-plans amb dates; ajuda a veure
+                d'un cop d'ull "quan toca cada peça" en viatges llargs. */}
+            <div className="lg:col-start-1 lg:row-start-1 min-w-0 space-y-12 [&>:last-child]:mb-0">
               {children.some((c) => c.startDate && c.endDate) && (
                 <SubPlansTimeline
                   parentStart={plan.startDate}
@@ -210,17 +213,12 @@ export default async function PlanDetailPage({
                   items={children}
                 />
               )}
-              <section>
-                <EditableSummary planId={plan.id} value={plan.summary} />
-                <EditableBody planId={plan.id} source={plan.body}>
-                  <MarkdownBody>{plan.body}</MarkdownBody>
-                </EditableBody>
-              </section>
+              <EditableSummary planId={plan.id} value={plan.summary} />
             </div>
             {/* Sticky però amb scroll propi: si la columna és més alta que la
                 pantalla, es pot recórrer verticalment sense perdre-la de vista
                 ni desplaçar tot el cos. */}
-            <aside className="space-y-5 lg:sticky lg:top-24 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto lg:pr-1 lg:[scrollbar-width:thin] lg:[scrollbar-color:var(--color-ink-faint)_transparent]">
+            <aside className="lg:col-start-2 lg:row-start-1 lg:row-span-2 space-y-5 lg:sticky lg:top-24 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto lg:pr-1 lg:[scrollbar-width:thin] lg:[scrollbar-color:var(--color-ink-faint)_transparent]">
               {showToc && <PlanToc headings={tocHeadings} />}
               {showSubPlans && (
                 <SubPlansCard parentId={plan.id} subPlans={children} />
@@ -237,6 +235,12 @@ export default async function PlanDetailPage({
               />
               <DocumentList documents={plan.documents} />
             </aside>
+
+            <div className="lg:col-start-1 lg:row-start-2 min-w-0">
+              <EditableBody planId={plan.id} source={plan.body}>
+                <MarkdownBody>{plan.body}</MarkdownBody>
+              </EditableBody>
+            </div>
           </div>
         )}
 
