@@ -225,10 +225,11 @@ export default async function PlanDetailPage({
               {showSubPlans && (
                 <SubPlansCard parentId={plan.id} subPlans={children} />
               )}
-              <Checklist planId={plan.id} items={plan.checklist} />
-              {subChecklistGroups.length > 0 && (
-                <SubChecklists groups={subChecklistGroups} />
-              )}
+              <Checklist planId={plan.id} items={plan.checklist}>
+                {subChecklistGroups.length > 0 && (
+                  <SubChecklists groups={subChecklistGroups} />
+                )}
+              </Checklist>
               <ExpenseTable
                 expenses={plan.expenses}
                 budgetTotal={plan.budgetTotal}

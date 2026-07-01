@@ -14,9 +14,12 @@ import type { ChecklistItem } from "@/lib/types";
 export function Checklist({
   planId,
   items,
+  children,
 }: {
   planId: string;
   items: ChecklistItem[];
+  // Sub-secció opcional dins la mateixa targeta (p. ex. "per fer a cada país").
+  children?: React.ReactNode;
 }) {
   const [list, setList] = useState(items);
   const [draft, setDraft] = useState("");
@@ -242,6 +245,10 @@ export function Checklist({
       </form>
 
       {error && <p className="mt-2 text-xs text-peach-deep">{error}</p>}
+
+      {children && (
+        <div className="mt-5 pt-5 border-t border-ink-faint/25">{children}</div>
+      )}
     </section>
   );
 }

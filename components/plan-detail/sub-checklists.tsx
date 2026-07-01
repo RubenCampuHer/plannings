@@ -67,10 +67,10 @@ export function SubChecklists({ groups }: { groups: SubChecklistGroup[] }) {
   if (withItems.length === 0) return null;
 
   return (
-    <section aria-label="Per fer a cada país" className="px-1">
-      <h2 className="font-hand text-xl text-peach-deep -rotate-1 inline-block mb-2">
+    <section aria-label="Per fer a cada país">
+      <h3 className="font-hand text-lg text-peach-deep -rotate-1 inline-block mb-2">
         per fer a cada país
-      </h2>
+      </h3>
       <div className="space-y-4">
         {withItems.map((g) => {
           const done = g.items.filter((i) => i.done).length;
