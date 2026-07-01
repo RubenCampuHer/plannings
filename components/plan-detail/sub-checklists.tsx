@@ -1,5 +1,10 @@
+"use client";
+
 import Link from "next/link";
-import { Check, ChevronRight, Circle } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Check, ChevronRight } from "lucide-react";
+import { toggleChecklistItem } from "@/lib/checklist-actions";
 
 export type SubChecklistGroup = {
   planId: string;
@@ -8,13 +13,57 @@ export type SubChecklistGroup = {
 };
 
 /**
- * Vista agregada (només lectura) de les "coses per fer" específiques de cada
- * sub-plà, perquè al pla pare es vegin totes en un sol lloc. L'edició es fa al
- * sub-plà (enllaç a la capçalera de cada grup). Els genèrics viuen a la
- * checklist pròpia del pla; aquí només hi ha els específics de cada país.
+ * Vista agregada de les "coses per fer" específiques de cada sub-plà, perquè al
+ * pla pare es vegin totes en un sol lloc. Ara és interactiva: es poden marcar
+ * fetes des d'aquí (estat optimista + `toggleChecklistItem`, que revalida el
+ * sub-plà). L'enllaç de la capçalera segueix portant a editar el sub-plà. Els
+ * genèrics viuen a la checklist pròpia del pla; aquí només els de cada país.
  */
 export function SubChecklists({ groups }: { groups: SubChecklistGroup[] }) {
-  const withItems = groups.filter((g) => g.items.length > 0);
+  const [state, setState] = useState(groups);
+  const [, startTransition] = useTransition();
+
+  // Sincronitza quan el server torna a carregar el pla pare.
+  useEffect(() => {
+    setState(groups);
+  }, [groups]);
+
+  function toggle(planId: string, itemId: string, current: boolean) {
+    const newDone = !current;
+    setState((prev) =>
+      prev.map((g) =>
+        g.planId === planId
+          ? {
+              ...g,
+              items: g.items.map((i) =>
+                i.id === itemId ? { ...i, done: newDone } : i,
+              ),
+            }
+          : g,
+      ),
+    );
+    startTransition(async () => {
+      try {
+        await toggleChecklistItem(planId, itemId, newDone);
+      } catch {
+        // Reverteix l'optimisme si falla.
+        setState((prev) =>
+          prev.map((g) =>
+            g.planId === planId
+              ? {
+                  ...g,
+                  items: g.items.map((i) =>
+                    i.id === itemId ? { ...i, done: current } : i,
+                  ),
+                }
+              : g,
+          ),
+        );
+      }
+    });
+  }
+
+  const withItems = state.filter((g) => g.items.length > 0);
   if (withItems.length === 0) return null;
 
   return (
@@ -25,6 +74,11 @@ export function SubChecklists({ groups }: { groups: SubChecklistGroup[] }) {
       <div className="space-y-4">
         {withItems.map((g) => {
           const done = g.items.filter((i) => i.done).length;
+          const pct = Math.round((done / g.items.length) * 100);
+          // Pendents a dalt, fets al fons (esvaïts).
+          const ordered = [...g.items].sort(
+            (a, b) => Number(a.done) - Number(b.done),
+          );
           return (
             <div key={g.planId}>
               <Link
@@ -42,19 +96,57 @@ export function SubChecklists({ groups }: { groups: SubChecklistGroup[] }) {
                   {done}/{g.items.length}
                 </span>
               </Link>
+              <div
+                className="h-1 w-full rounded-full bg-ink-faint/15 overflow-hidden mb-2"
+                role="progressbar"
+                aria-valuenow={pct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`${g.title}: ${done} de ${g.items.length} fetes`}
+              >
+                <motion.div
+                  className="h-full rounded-full bg-sage-deep"
+                  initial={false}
+                  animate={{ width: `${pct}%` }}
+                  transition={{ type: "spring", stiffness: 220, damping: 30 }}
+                />
+              </div>
               <ul className="space-y-1 pl-0.5">
-                {g.items.map((i) => (
-                  <li key={i.id} className="flex items-start gap-2 text-sm">
-                    {i.done ? (
-                      <Check className="h-3.5 w-3.5 mt-0.5 shrink-0 text-sage-deep" strokeWidth={2.5} />
-                    ) : (
-                      <Circle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-ink-faint" strokeWidth={2} />
-                    )}
-                    <span className={i.done ? "text-ink-soft line-through" : "text-ink-soft"}>
-                      {i.text}
-                    </span>
-                  </li>
-                ))}
+                <AnimatePresence initial={false}>
+                  {ordered.map((i) => (
+                    <motion.li
+                      key={i.id}
+                      layout
+                      transition={{ type: "spring", stiffness: 500, damping: 34 }}
+                      className="group/item flex items-start gap-2 text-sm"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggle(g.planId, i.id, i.done)}
+                        aria-pressed={i.done}
+                        aria-label={
+                          i.done ? `Desfer: ${i.text}` : `Marcar fet: ${i.text}`
+                        }
+                        className={`mt-0.5 grid place-items-center h-4 w-4 shrink-0 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-peach/50 ${
+                          i.done
+                            ? "bg-sage-deep border-sage-deep text-white"
+                            : "bg-cream border-ink-faint/60 hover:border-sage-deep"
+                        }`}
+                      >
+                        {i.done && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                      </button>
+                      <span
+                        className={
+                          i.done
+                            ? "text-ink-soft/75 line-through decoration-ink-soft/40"
+                            : "text-ink-soft"
+                        }
+                      >
+                        {i.text}
+                      </span>
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
               </ul>
             </div>
           );
