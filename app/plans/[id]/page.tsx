@@ -217,7 +217,10 @@ export default async function PlanDetailPage({
                 </EditableBody>
               </section>
             </div>
-            <aside className="space-y-5 lg:sticky lg:top-24">
+            {/* Sticky però amb scroll propi: si la columna és més alta que la
+                pantalla, es pot recórrer verticalment sense perdre-la de vista
+                ni desplaçar tot el cos. */}
+            <aside className="space-y-5 lg:sticky lg:top-24 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto lg:pr-1 lg:[scrollbar-width:thin] lg:[scrollbar-color:var(--color-ink-faint)_transparent]">
               {showToc && <PlanToc headings={tocHeadings} />}
               {showSubPlans && (
                 <SubPlansCard parentId={plan.id} subPlans={children} />
